@@ -17,23 +17,26 @@ dotenvy = "0.15.7"
 thiserror = "1.0.63"
 num-traits = "0.2.19"
 serde_json = "1.0.127"
-alloy-sol-types = "0.7.7"
+aws-sdk-kms = "1.40.0"
 tokio = { version = "1.39.3", features = ["full"] }
 chrono = { version = "0.4.38", features = ["serde"] }
 reqwest = { version = "0.12.7", features = ["json"] }
 serde = { version = "1.0.209", features = ["derive"] }
 schemars = { version = "0.8.21", features = ["chrono"] }
-alloy-signer = { version = "0.2.1", features = ["eip712"] }
 axum-jsonschema = { version = "0.8.0", features = ["aide"] }
-alloy-primitives = { version = "0.7.7", features = ["serde"] }
-alloy-signer-local = { version = "0.2.1", features = ["eip712"] }
 aide = { version = "0.13.4", features = ["axum", "macros", "scalar"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+aws-config = { version = "1.5.5", features = ["behavior-version-latest"] }
 ruint = { version = "1.12.3", default-features = false, features = [
     "num-traits",
 ] }
 sqlxinsert = { version = "0.10.0", default-features = false, features = [
     "postgres",
+] }
+alloy = { git = "https://github.com/alloy-rs/alloy.git", features = [
+    "eip712",
+    "signer-aws",
+    "sol-types",
 ] }
 sqlx = { version = "0.8.1", features = [
     "runtime-tokio-rustls",
