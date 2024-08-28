@@ -106,7 +106,7 @@ async fn sign_response(
         version: "1.0.0",
         chain_id: 1,
         verifying_contract: env::var("ENS_RESOLVER_ADDRESS").unwrap().parse().unwrap(),
-        salt: keccak256("my domain salt"),
+        salt: keccak256(env::var("ENS_RESOLVER_SALT").unwrap()),
     };
 
     let signature = signer
