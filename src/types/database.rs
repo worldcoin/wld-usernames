@@ -1,17 +1,22 @@
 use crate::types::{Address, VerificationLevel};
 use chrono::Utc;
-use schemars::JsonSchema;
-use serde::Serialize;
 use sqlx::prelude::FromRow;
 use sqlxinsert::PgInsert;
 
-#[derive(Debug, Serialize, FromRow, PgInsert, JsonSchema)]
+/// A registered username.
+#[derive(Debug, FromRow, PgInsert)]
 pub struct Name {
+    /// Checksummed address of the owner.
     pub address: String,
+    /// World App username of the owner.
     pub username: String,
+    /// The nullifier hash of the proof that was used to register this name.
     pub nullifier_hash: String,
+    /// The verificaiton level of the proof that was used to register this name.
     pub verification_level: String,
+    /// The time at which this name was registered.
     pub created_at: chrono::NaiveDateTime,
+    /// The time at which this name was last updated.
     pub updated_at: chrono::NaiveDateTime,
 }
 

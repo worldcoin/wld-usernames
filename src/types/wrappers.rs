@@ -5,6 +5,7 @@ use serde_json::Value;
 use std::fmt;
 use std::{fmt::Display, ops::Deref};
 
+/// 0x-prefixed hex string representing an Ethereum address.
 #[repr(transparent)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Address(pub alloy_primitives::Address);
@@ -36,6 +37,7 @@ impl JsonSchema for Address {
     }
 }
 
+/// World ID verification level
 #[repr(transparent)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VerificationLevel(pub idkit::session::VerificationLevel);

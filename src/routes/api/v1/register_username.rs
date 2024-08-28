@@ -92,3 +92,7 @@ pub async fn register_username(
 
     Ok(StatusCode::CREATED)
 }
+
+pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
+    op.description("Register a World App username with World ID.")
+}

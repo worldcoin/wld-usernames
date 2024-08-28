@@ -68,6 +68,10 @@ pub async fn ens_gateway(
         .map_err(|_| ENSErrorResponse::new("Failed to sign response."))
 }
 
+pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
+    op.description("CCIP Read Gateway powering the ENS integration.")
+}
+
 fn decode_payload(payload: &ENSQueryPayload) -> Result<(Vec<u8>, String, Method), anyhow::Error> {
     let req_data = hex::decode(&payload.data[2..])?;
     let decoded_req = ResolveRequest::abi_decode(&req_data, true)?;
@@ -105,7 +109,7 @@ async fn sign_response(
         name: "World App Usernames",
         version: "1.0.0",
         chain_id: 1,
-        verifying_contract: env::var("ENS_RESOLVER_ADDRESS").unwrap().parse().unwrap(),
+        verifying_contract: sender.0,
         salt: keccak256(env::var("ENS_RESOLVER_SALT").unwrap()),
     };
 

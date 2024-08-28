@@ -6,7 +6,7 @@ use axum::{
 use axum_jsonschema::Json;
 use sqlx::PgPool;
 
-use crate::types::{ErrorResponse, MovedRecord, Name};
+use crate::types::{ErrorResponse, MovedRecord, Name, UsernameRecord};
 
 pub async fn query_single(
     Extension(db): Extension<PgPool>,
@@ -20,7 +20,7 @@ pub async fn query_single(
     .fetch_optional(&db)
     .await?
     {
-        return Ok(Json(name).into_response());
+        return Ok(Json(UsernameRecord::from(name)).into_response());
     };
 
     if let Some(moved) = sqlx::query_as!(
@@ -35,4 +35,15 @@ pub async fn query_single(
     }
 
     Err(ErrorResponse::not_found("Record not found.".to_string()))
+}
+
+pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
+    op.description("Resolve a single username or address.")
+        .response::<404, ErrorResponse>()
+        .response::<200, Json<UsernameRecord>>()
+        .response_with::<301, Redirect, _>(|op| {
+            op.description(
+                "A redirect to the new username, if the queries username has recently changed.",
+            )
+        })
 }

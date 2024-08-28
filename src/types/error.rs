@@ -1,17 +1,21 @@
 #![allow(clippy::module_name_repetitions)]
 
-use aide::{OperationIo, OperationOutput};
+use aide::{gen::GenContext, openapi::Operation, OperationOutput};
 use axum::response::IntoResponse;
 use axum_jsonschema::Json;
 use http::StatusCode;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 #[derive(Debug)]
 pub struct ErrorResponse {
     error: String,
     status: StatusCode,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct ErrorResponseSchema {
+    error: String,
 }
 
 impl ErrorResponse {
@@ -47,7 +51,7 @@ impl<E: std::error::Error> From<E> for ErrorResponse {
 
 impl IntoResponse for ErrorResponse {
     fn into_response(self) -> axum::response::Response {
-        (self.status, Json(json! ({ "error": self.error }))).into_response()
+        (self.status, Json(ErrorResponseSchema { error: self.error })).into_response()
     }
 }
 
@@ -55,14 +59,14 @@ impl OperationOutput for ErrorResponse {
     type Inner = Self;
 
     fn operation_response(
-        _: &mut aide::gen::GenContext,
-        _: &mut aide::openapi::Operation,
+        ctx: &mut aide::gen::GenContext,
+        operation: &mut aide::openapi::Operation,
     ) -> Option<aide::openapi::Response> {
-        None
+        Json::<ErrorResponseSchema>::operation_response(ctx, operation)
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema, OperationIo)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ENSErrorResponse {
     /// A human-readable error message.
     pub message: String,
@@ -79,5 +83,25 @@ impl ENSErrorResponse {
 impl IntoResponse for ENSErrorResponse {
     fn into_response(self) -> axum::response::Response {
         (StatusCode::BAD_REQUEST, Json(self)).into_response()
+    }
+}
+
+impl OperationOutput for ENSErrorResponse {
+    type Inner = Self;
+
+    fn operation_response(
+        ctx: &mut GenContext,
+        operation: &mut Operation,
+    ) -> Option<aide::openapi::Response> {
+        Json::<Self>::operation_response(ctx, operation)
+    }
+
+    fn inferred_responses(
+        ctx: &mut aide::gen::GenContext,
+        operation: &mut Operation,
+    ) -> Vec<(Option<u16>, aide::openapi::Response)> {
+        Self::operation_response(ctx, operation).map_or_else(Vec::new, |res| {
+            vec![(Some(StatusCode::BAD_REQUEST.as_u16()), res)]
+        })
     }
 }

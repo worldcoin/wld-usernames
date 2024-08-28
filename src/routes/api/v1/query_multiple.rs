@@ -2,12 +2,12 @@ use axum::Extension;
 use axum_jsonschema::Json;
 use sqlx::PgPool;
 
-use crate::types::{ErrorResponse, Name, QueryAddressesPayload};
+use crate::types::{ErrorResponse, Name, QueryAddressesPayload, UsernameRecord};
 
 pub async fn query_multiple(
     Extension(db): Extension<PgPool>,
     Json(payload): Json<QueryAddressesPayload>,
-) -> Result<Json<Vec<Name>>, ErrorResponse> {
+) -> Result<Json<Vec<UsernameRecord>>, ErrorResponse> {
     let addresses = payload
         .addresses
         .iter()
@@ -22,5 +22,9 @@ pub async fn query_multiple(
     .fetch_all(&db)
     .await?;
 
-    Ok(Json(names))
+    Ok(Json(names.into_iter().map(UsernameRecord::from).collect()))
+}
+
+pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
+    op.description("Resolve multiple addresses into their registered usernames.")
 }

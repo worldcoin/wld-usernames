@@ -3,7 +3,7 @@ use axum_jsonschema::Json;
 use schemars::JsonSchema;
 
 pub fn handler() -> ApiRouter {
-    ApiRouter::new().route("/", get(root))
+    ApiRouter::new().api_route("/", get(root))
 }
 
 #[derive(Debug, serde::Serialize, JsonSchema)]
