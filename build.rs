@@ -21,6 +21,7 @@ fn get_compile_date() -> String {
 }
 
 fn main() {
+	println!("cargo:rerun-if-changed=migrations");
 	println!("cargo:rustc-env=STATIC_BUILD_DATE={}", get_compile_date());
 
 	if let Some(rev) = get_git_rev() {

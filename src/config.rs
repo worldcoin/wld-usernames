@@ -1,11 +1,12 @@
 use anyhow::Context;
 use axum::Extension;
 use idkit::session::AppId;
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use regex::Regex;
+use sqlx::{migrate::MigrateError, postgres::PgPoolOptions, PgPool};
 use std::{
 	env::{self, VarError},
 	num::ParseIntError,
-	sync::Arc,
+	sync::{Arc, LazyLock},
 	time::Duration,
 };
 
@@ -14,6 +15,12 @@ use crate::blocklist::{Blocklist, BlocklistExt};
 #[allow(clippy::module_name_repetitions)]
 pub type ConfigExt = Extension<Arc<Config>>;
 
+pub static USERNAME_REGEX: LazyLock<Regex> =
+	LazyLock::new(|| Regex::new(r"^[a-z]\w{2,13}[a-z0-9]$").unwrap());
+pub static DEVICE_USERNAME_REGEX: LazyLock<Regex> =
+	LazyLock::new(|| Regex::new(r"^[a-z]\w{2,13}[a-z0-9]\.\d{4}$").unwrap());
+
+#[derive(Debug)]
 pub struct Config {
 	pub wld_app_id: AppId,
 	pub ens_chain_id: u64,
@@ -68,6 +75,10 @@ impl Config {
 				)
 			},
 		})
+	}
+
+	pub async fn migrate_database(&self) -> Result<(), MigrateError> {
+		sqlx::migrate!().run(self.db_client.as_ref().unwrap()).await
 	}
 
 	pub fn db_extension(&mut self) -> Extension<PgPool> {

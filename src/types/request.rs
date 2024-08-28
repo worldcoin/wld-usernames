@@ -1,6 +1,7 @@
 use idkit::Proof;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use super::{Address, VerificationLevel};
 
@@ -12,8 +13,10 @@ pub struct RegisterUsernamePayload {
 	merkle_root: String,
 	/// The requested username.
 	pub username: String,
-	/// The user's walle address.
+	/// The user's wallet address.
 	pub address: Address,
+	/// The user's profile picture URL.
+	pub profile_picture_url: Option<Url>,
 	/// 0x-prefixed hex string of the World ID nullifier hash.
 	pub nullifier_hash: String,
 	/// World ID verification level the user holds.
@@ -36,6 +39,62 @@ impl RegisterUsernamePayload {
 pub struct QueryAddressesPayload {
 	/// A list of addresses to resolve.
 	pub addresses: Vec<Address>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct UpdateUsernamePayload {
+	/// 0x-prefixed hex string of the World ID proof.
+	proof: String,
+	/// 0x-prefixed hex string of the World ID merkle root.
+	merkle_root: String,
+	/// The username's new wallet address.
+	pub address: Address,
+	/// The username's new profile picture URL. If not provided, the exixting profile picture URL will be deleted.
+	pub profile_picture_url: Option<Url>,
+	/// 0x-prefixed hex string of the World ID nullifier hash.
+	pub nullifier_hash: String,
+	/// World ID verification level the user holds.
+	pub verification_level: VerificationLevel,
+}
+
+impl UpdateUsernamePayload {
+	#[allow(clippy::wrong_self_convention)]
+	pub fn into_proof(&self) -> Proof {
+		Proof {
+			proof: self.proof.clone(),
+			merkle_root: self.merkle_root.clone(),
+			nullifier_hash: self.nullifier_hash.clone(),
+			verification_level: self.verification_level.0,
+		}
+	}
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct RenamePayload {
+	/// 0x-prefixed hex string of the World ID proof.
+	proof: String,
+	/// 0x-prefixed hex string of the World ID merkle root.
+	merkle_root: String,
+	/// The username to migrate from.
+	pub old_username: String,
+	/// The username to migrate to.
+	pub new_username: String,
+	/// 0x-prefixed hex string of the World ID nullifier hash.
+	pub nullifier_hash: String,
+	/// World ID verification level the user holds.
+	pub verification_level: VerificationLevel,
+}
+
+impl RenamePayload {
+	#[allow(clippy::wrong_self_convention)]
+	pub fn into_proof(&self) -> Proof {
+		Proof {
+			proof: self.proof.clone(),
+			merkle_root: self.merkle_root.clone(),
+			nullifier_hash: self.nullifier_hash.clone(),
+			verification_level: self.verification_level.0,
+		}
+	}
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]

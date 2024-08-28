@@ -2,6 +2,7 @@ use crate::types::{Address, VerificationLevel};
 use chrono::Utc;
 use sqlx::prelude::FromRow;
 use sqlxinsert::PgInsert;
+use url::Url;
 
 /// A registered username.
 #[derive(Debug, FromRow, PgInsert)]
@@ -10,6 +11,8 @@ pub struct Name {
 	pub address: String,
 	/// World App username of the owner.
 	pub username: String,
+	/// URL of the owner's profile picture.
+	pub profile_picture_url: Option<String>,
 	/// The nullifier hash of the proof that was used to register this name.
 	pub nullifier_hash: String,
 	/// The verificaiton level of the proof that was used to register this name.
@@ -24,6 +27,7 @@ impl Name {
 	pub fn new(
 		username: String,
 		address: &Address,
+		profile_picture_url: Option<Url>,
 		nullifier_hash: String,
 		verification_level: &VerificationLevel,
 	) -> Self {
@@ -32,8 +36,9 @@ impl Name {
 			nullifier_hash,
 			created_at: Utc::now().naive_utc(),
 			updated_at: Utc::now().naive_utc(),
-			address: address.0.to_checksum(None),
+			address: address.to_checksum(None),
 			verification_level: verification_level.to_string(),
+			profile_picture_url: profile_picture_url.map(|u| u.to_string()),
 		}
 	}
 }

@@ -8,6 +8,9 @@ mod wrappers;
 pub use database::{MovedRecord, Name};
 pub use ens::{resolveCall as ResolveRequest, GatewayResponse, Method};
 pub use error::{ENSErrorResponse, ErrorResponse};
-pub use request::{ENSQueryPayload, QueryAddressesPayload, RegisterUsernamePayload};
+pub use request::{
+	ENSQueryPayload, QueryAddressesPayload, RegisterUsernamePayload, RenamePayload,
+	UpdateUsernamePayload,
+};
 pub use response::{ENSResponse, UsernameRecord};
 pub use wrappers::{Address, VerificationLevel};

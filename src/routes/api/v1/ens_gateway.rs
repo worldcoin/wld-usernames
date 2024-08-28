@@ -43,12 +43,17 @@ pub async fn ens_gateway(
 				return Err(ENSErrorResponse::new("Invalid node hash provided."));
 			}
 
-			// Support for other will be implemented in the future.
-			if key != "avatar" {
-				return Err(ENSErrorResponse::new(&format!("Record not found: {key}",)));
-			}
+			match key.as_str() {
+				"avatar" => {
+					let Some(avatar_url) = record.profile_picture_url else {
+						return Err(ENSErrorResponse::new(&format!("Record not found: {key}")));
+					};
 
-			todo!("Add avatar support");
+					(avatar_url).abi_encode()
+				},
+				// Support for other might be implemented in the future.
+				_ => return Err(ENSErrorResponse::new(&format!("Record not found: {key}"))),
+			}
 		},
 		Method::Addr(node) => {
 			if node != namehash(&name) {

@@ -3,6 +3,7 @@
 use aide::OperationIo;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use super::{Address, Name};
 
@@ -18,6 +19,8 @@ pub struct UsernameRecord {
 	pub username: String,
 	/// Checksummed wallet address of the user.
 	pub address: Address,
+	/// URL to the user's profile picture.
+	pub profile_picture_url: Option<Url>,
 }
 
 #[allow(clippy::fallible_impl_from)]
@@ -26,6 +29,7 @@ impl From<Name> for UsernameRecord {
 		Self {
 			username: value.username,
 			address: Address(value.address.parse().unwrap()),
+			profile_picture_url: value.profile_picture_url.map(|url| url.parse().unwrap()),
 		}
 	}
 }

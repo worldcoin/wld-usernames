@@ -24,5 +24,8 @@ async fn main() -> Result<()> {
 		))
 		.init();
 
-	server::start(Config::from_env().await?).await
+	let config = Config::from_env().await?;
+	config.migrate_database().await?;
+
+	server::start(config).await
 }

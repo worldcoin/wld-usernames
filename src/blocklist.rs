@@ -5,6 +5,7 @@ use std::{collections::HashSet, sync::Arc};
 pub type BlocklistExt = Extension<Arc<Blocklist>>;
 
 /// A blocklist of usernames and substrings.
+#[derive(Debug)]
 pub struct Blocklist {
 	/// A list of reserved usernames
 	names: HashSet<Box<str>>,

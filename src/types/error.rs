@@ -26,6 +26,13 @@ impl ErrorResponse {
 		}
 	}
 
+	pub const fn unauthorized(error: String) -> Self {
+		Self {
+			error,
+			status: StatusCode::UNAUTHORIZED,
+		}
+	}
+
 	pub const fn validation_error(error: String) -> Self {
 		Self {
 			error,

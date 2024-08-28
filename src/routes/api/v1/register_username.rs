@@ -2,20 +2,13 @@ use axum::Extension;
 use axum_jsonschema::Json;
 use http::StatusCode;
 use idkit::session::VerificationLevel;
-use regex::Regex;
 use sqlx::PgPool;
-use std::sync::LazyLock;
 
 use crate::{
 	blocklist::BlocklistExt,
-	config::ConfigExt,
+	config::{ConfigExt, DEVICE_USERNAME_REGEX, USERNAME_REGEX},
 	types::{ErrorResponse, Name, RegisterUsernamePayload},
 };
-
-static USERNAME_REGEX: LazyLock<Regex> =
-	LazyLock::new(|| Regex::new(r"^[a-z]\w{2,13}[a-z0-9]$").unwrap());
-static DEVICE_USERNAME_REGEX: LazyLock<Regex> =
-	LazyLock::new(|| Regex::new(r"^[a-z]\w{2,13}[a-z0-9]\.\d{4}$").unwrap());
 
 #[allow(dependency_on_unit_never_type_fallback)]
 pub async fn register_username(
@@ -28,7 +21,7 @@ pub async fn register_username(
 		payload.into_proof(),
 		config.wld_app_id.clone(),
 		"username",
-		(&payload.username, payload.address.0.to_checksum(None)),
+		(&payload.username, payload.address.to_checksum(None)),
 	)
 	.await
 	{
@@ -83,6 +76,7 @@ pub async fn register_username(
 	Name::new(
 		payload.username,
 		&payload.address,
+		payload.profile_picture_url,
 		payload.nullifier_hash,
 		&payload.verification_level,
 	)
