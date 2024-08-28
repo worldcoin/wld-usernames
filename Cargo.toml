@@ -1,0 +1,47 @@
+[package]
+license = "MIT"
+edition = "2021"
+version = "0.1.0"
+name = "wld-usernames"
+authors = ["Miguel Piedrafita <rust@miguel.build>"]
+
+[dependencies]
+axum = "0.7.5"
+hex = "0.4.3"
+http = "1.1.0"
+idkit = "0.1.2"
+regex = "1.10.6"
+anyhow = "1.0.86"
+tracing = "0.1.40"
+dotenvy = "0.15.7"
+thiserror = "1.0.63"
+num-traits = "0.2.19"
+serde_json = "1.0.127"
+alloy-sol-types = "0.7.7"
+tokio = { version = "1.39.3", features = ["full"] }
+chrono = { version = "0.4.38", features = ["serde"] }
+reqwest = { version = "0.12.7", features = ["json"] }
+serde = { version = "1.0.209", features = ["derive"] }
+schemars = { version = "0.8.21", features = ["chrono"] }
+alloy-signer = { version = "0.2.1", features = ["eip712"] }
+axum-jsonschema = { version = "0.8.0", features = ["aide"] }
+alloy-primitives = { version = "0.7.7", features = ["serde"] }
+alloy-signer-local = { version = "0.2.1", features = ["eip712"] }
+aide = { version = "0.13.4", features = ["axum", "macros", "scalar"] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+ruint = { version = "1.12.3", default-features = false, features = [
+    "num-traits",
+] }
+sqlxinsert = { version = "0.10.0", default-features = false, features = [
+    "postgres",
+] }
+sqlx = { version = "0.8.1", features = [
+    "runtime-tokio-rustls",
+    "any",
+    "postgres",
+    "chrono",
+] }
+
+
+[build-dependencies]
+chrono = "0.4.38"
