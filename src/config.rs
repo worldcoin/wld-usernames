@@ -1,4 +1,3 @@
-use alloy::primitives::{keccak256, FixedBytes};
 use axum::Extension;
 use idkit::session::AppId;
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -22,7 +21,6 @@ pub struct Config {
 	db_client: Option<PgPool>,
 	blocklist: Option<Blocklist>,
 	kms_client: Option<aws_sdk_kms::Client>,
-	pub ens_resolver_salt: FixedBytes<32>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -56,7 +54,6 @@ impl Config {
 			kms_key_id: env::var("KMS_KEY_ID")?,
 			ens_domain: env::var("ENS_DOMAIN")?,
 			ens_chain_id: env::var("ENS_CHAIN_ID")?.parse()?,
-			ens_resolver_salt: keccak256(env::var("ENS_RESOLVER_SALT")?),
 			wld_app_id: unsafe { AppId::new_unchecked(env::var("WLD_APP_ID")?) },
 		})
 	}

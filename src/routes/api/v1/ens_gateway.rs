@@ -109,18 +109,17 @@ async fn sign_response(
 	let signer = AwsSigner::new(kms_client, config.kms_key_id.clone(), None).await?;
 
 	let data = GatewayResponse {
-		expires_at,
 		sender: sender.0,
-		response_hash: keccak256(&response),
-		request_hash: keccak256(request_data),
+		expiresAt: expires_at,
+		responseHash: keccak256(&response),
+		requestHash: keccak256(request_data),
 	};
 
 	let domain = eip712_domain! {
 		name: "World App Usernames",
-		version: "1.0.0",
+		version: "1",
 		chain_id: config.ens_chain_id,
 		verifying_contract: sender.0,
-		salt: config.ens_resolver_salt,
 	};
 
 	let signature = signer

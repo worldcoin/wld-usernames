@@ -19,9 +19,9 @@ sol! {
 
 	struct GatewayResponse {
 		address sender;
-		uint256 expires_at;
-		bytes32 request_hash;
-		bytes32 response_hash;
+		uint256 expiresAt;
+		bytes32 requestHash;
+		bytes32 responseHash;
 	}
 }
 

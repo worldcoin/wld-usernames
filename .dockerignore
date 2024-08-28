@@ -1,4 +1,8 @@
 .env
-target
+/out
+/cache
+/target
 Dockerfile
+/contracts
+/dependencies
 .dockerignore

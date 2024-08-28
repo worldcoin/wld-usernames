@@ -1,0 +1,13 @@
+[profile.default]
+out = "out"
+src = "contracts"
+gas_reports = ["*"]
+libs = ["dependencies"]
+
+[profile.ci]
+verbosity = 4
+fuzz = { runs = 20_000 }
+
+[dependencies]
+solady = { version = "0.0.210" }
+forge-std = { version = "1.8.2" }
