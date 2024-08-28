@@ -1,3 +1,4 @@
+use anyhow::Context;
 use axum::Extension;
 use idkit::session::AppId;
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -17,10 +18,9 @@ pub struct Config {
 	pub wld_app_id: AppId,
 	pub ens_chain_id: u64,
 	pub ens_domain: String,
-	pub kms_key_id: String,
+	pub private_key: String,
 	db_client: Option<PgPool>,
 	blocklist: Option<Blocklist>,
-	kms_client: Option<aws_sdk_kms::Client>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -31,30 +31,42 @@ pub enum Error {
 	Sqlx(#[from] sqlx::Error),
 	#[error(transparent)]
 	ChainId(#[from] ParseIntError),
+	#[error(transparent)]
+	EnvWithContext(#[from] anyhow::Error),
 }
 
 impl Config {
 	pub async fn from_env() -> Result<Self, Error> {
 		let blocklist = Blocklist::new(
-			&env::var("RESERVED_USERNAMES")?,
-			&env::var("BLOCKED_SUBSTRINGS")?,
+			&env::var("RESERVED_USERNAMES")
+				.context("RESERVED_USERNAMES environment variable not set")?,
+			&env::var("BLOCKED_SUBSTRINGS")
+				.context("BLOCKED_SUBSTRINGS environment variable not set")?,
 		);
 
 		let db_client = PgPoolOptions::new()
 			.acquire_timeout(Duration::from_secs(3))
-			.connect(&env::var("DATABASE_URL")?)
+			.connect(
+				&env::var("DATABASE_URL").context("DATABASE_URL environment variable not set")?,
+			)
 			.await?;
-
-		let kms_client = aws_sdk_kms::Client::new(&aws_config::load_from_env().await);
 
 		Ok(Self {
 			db_client: Some(db_client),
 			blocklist: Some(blocklist),
-			kms_client: Some(kms_client),
-			kms_key_id: env::var("KMS_KEY_ID")?,
-			ens_domain: env::var("ENS_DOMAIN")?,
-			ens_chain_id: env::var("ENS_CHAIN_ID")?.parse()?,
-			wld_app_id: unsafe { AppId::new_unchecked(env::var("WLD_APP_ID")?) },
+			ens_domain: env::var("ENS_DOMAIN")
+				.context("ENS_DOMAIN environment variable not set")?,
+			private_key: env::var("PRIVATE_KEY")
+				.context("PRIVATE_KEY environment variable not set")?,
+			ens_chain_id: env::var("ENS_CHAIN_ID")
+				.context("ENS_CHAIN_ID environment variable not set")?
+				.parse()
+				.context("ENS_CHAIN_ID could not be parsed as a number")?,
+			wld_app_id: unsafe {
+				AppId::new_unchecked(
+					env::var("WLD_APP_ID").context("WLD_APP_ID environment variable not set")?,
+				)
+			},
 		})
 	}
 
@@ -64,10 +76,6 @@ impl Config {
 
 	pub fn blocklist_extension(&mut self) -> BlocklistExt {
 		Extension(Arc::new(self.blocklist.take().unwrap()))
-	}
-
-	pub fn kms_extension(&mut self) -> Extension<aws_sdk_kms::Client> {
-		Extension(self.kms_client.take().unwrap())
 	}
 
 	pub fn extension(self) -> ConfigExt {

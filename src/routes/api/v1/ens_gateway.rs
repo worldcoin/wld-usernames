@@ -1,6 +1,6 @@
 use alloy::{
 	primitives::{keccak256, Address},
-	signers::{aws::AwsSigner, Signer},
+	signers::{local::PrivateKeySigner, Signer},
 	sol_types::{eip712_domain, SolCall, SolValue},
 };
 use axum::Extension;
@@ -9,7 +9,7 @@ use chrono::{TimeDelta, Utc};
 use num_traits::FromPrimitive;
 use ruint::Uint;
 use sqlx::PgPool;
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use crate::{
 	config::{Config, ConfigExt},
@@ -23,7 +23,6 @@ use crate::{
 pub async fn ens_gateway(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<PgPool>,
-	Extension(kms_client): Extension<aws_sdk_kms::Client>,
 	Json(request_payload): Json<ENSQueryPayload>,
 ) -> Result<Json<ENSResponse>, ENSErrorResponse> {
 	let (req_data, name, method) = decode_payload(&request_payload)
@@ -64,16 +63,10 @@ pub async fn ens_gateway(
 		_ => ().abi_encode(),
 	};
 
-	sign_response(
-		kms_client,
-		config,
-		result,
-		&req_data,
-		request_payload.sender,
-	)
-	.await
-	.map(|data| Json(ENSResponse { data }))
-	.map_err(|_| ENSErrorResponse::new("Failed to sign response."))
+	sign_response(config, result, &req_data, request_payload.sender)
+		.await
+		.map(|data| Json(ENSResponse { data }))
+		.map_err(|_| ENSErrorResponse::new("Failed to sign response."))
 }
 
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
@@ -92,7 +85,6 @@ fn decode_payload(payload: &ENSQueryPayload) -> Result<(Vec<u8>, String, Method)
 }
 
 async fn sign_response(
-	kms_client: aws_sdk_kms::Client,
 	config: Arc<Config>,
 	response: Vec<u8>,
 	request_data: &[u8],
@@ -106,7 +98,7 @@ async fn sign_response(
 	)
 	.unwrap();
 
-	let signer = AwsSigner::new(kms_client, config.kms_key_id.clone(), None).await?;
+	let signer = PrivateKeySigner::from_str(&config.private_key).unwrap();
 
 	let data = GatewayResponse {
 		sender: sender.0,

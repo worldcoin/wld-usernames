@@ -20,7 +20,6 @@ pub async fn start(mut config: Config) -> Result<()> {
 		.finish_api(&mut openapi)
 		.layer(Extension(openapi))
 		.layer(config.db_extension())
-		.layer(config.kms_extension())
 		.layer(config.blocklist_extension())
 		.layer(config.extension());
 
