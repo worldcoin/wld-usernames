@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                EXISTS(SELECT 1 FROM names WHERE nullifier_hash = $2) AS world_id,\n                EXISTS(SELECT 1 FROM names WHERE username = $1 UNION SELECT 1 FROM old_names where old_username = $1) AS username",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "world_id",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "47830372409878532604af16d51e5151a002bd02ec6d828cf9284309ef4a5ce3"
+}

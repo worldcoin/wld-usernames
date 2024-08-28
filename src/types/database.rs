@@ -1,4 +1,5 @@
 use crate::types::{Address, VerificationLevel};
+use chrono::Utc;
 use schemars::JsonSchema;
 use serde::Serialize;
 use sqlx::prelude::FromRow;
@@ -10,8 +11,8 @@ pub struct Name {
     pub username: String,
     pub nullifier_hash: String,
     pub verification_level: String,
-    pub created_at: Option<chrono::NaiveDateTime>,
-    pub updated_at: Option<chrono::NaiveDateTime>,
+    pub created_at: chrono::NaiveDateTime,
+    pub updated_at: chrono::NaiveDateTime,
 }
 
 impl Name {
@@ -24,8 +25,8 @@ impl Name {
         Self {
             username,
             nullifier_hash,
-            created_at: None,
-            updated_at: None,
+            created_at: Utc::now().naive_utc(),
+            updated_at: Utc::now().naive_utc(),
             address: address.0.to_checksum(None),
             verification_level: verification_level.to_string(),
         }

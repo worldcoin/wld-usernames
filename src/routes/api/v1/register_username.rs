@@ -59,22 +59,27 @@ pub async fn register_username(
         .ensure_valid(&payload.username)
         .map_err(|e| ErrorResponse::validation_error(e.to_string()))?;
 
-    if sqlx::query_scalar!(
-        "SELECT EXISTS (
-            SELECT 1 FROM names WHERE username = $1
-            UNION
-            SELECT 1 FROM old_names WHERE old_username = $1
-        )",
-        &payload.username
-    )
-    .fetch_one(&db)
-    .await?
-        == Some(true)
-    {
+    let uniqueness_check = sqlx::query!(
+            "SELECT
+                EXISTS(SELECT 1 FROM names WHERE nullifier_hash = $2) AS world_id,
+                EXISTS(SELECT 1 FROM names WHERE username = $1 UNION SELECT 1 FROM old_names where old_username = $1) AS username",
+            &payload.username,
+            &payload.nullifier_hash
+        )
+        .fetch_one(&db)
+        .await?;
+
+    if uniqueness_check.username.unwrap_or_default() {
         return Err(ErrorResponse::validation_error(
             "Username is already taken".to_string(),
         ));
     };
+
+    if uniqueness_check.world_id.unwrap_or_default() {
+        return Err(ErrorResponse::validation_error(
+            "This World ID has already registered a username.".to_string(),
+        ));
+    }
 
     Name::new(
         payload.username,
