@@ -47,7 +47,8 @@ jobs:
                   cache-to: 'type=gha,mode=max'
                   tags: '${{ steps.meta.outputs.tags }}'
                   labels: '${{ steps.meta.outputs.labels }}'
+                  build-args: |
+                        SQLX_OFFLINE: true
               env:
                   DOCKER_BUILD_SUMMARY: false
                   DOCKER_BUILD_RECORD_UPLOAD: false
-                  SQLX_OFFLINE: true

@@ -1,6 +1,16 @@
-FROM --platform=linux/amd64 clux/muslrust AS builder
+# Use a specific version of clux/muslrust
+FROM --platform=linux/amd64 clux/muslrust:stable AS builder
+
+RUN ln -s /usr/bin/ar /usr/bin/musl-ar
+
 WORKDIR /wld-usernames
 COPY . .
+
+ENV AR=musl-ar
+
+ARG SQLX_OFFLINE
+ENV SQLX_OFFLINE=${SQLX_OFFLINE}
+
 RUN cargo build --release --bin wld-usernames
 
 FROM --platform=linux/amd64 alpine AS runtime
