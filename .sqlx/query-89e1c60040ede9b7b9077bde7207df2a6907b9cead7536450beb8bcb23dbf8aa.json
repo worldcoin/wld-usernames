@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n            EXISTS(SELECT 1 FROM old_names where new_username = $1) AS has_old_username,\n            EXISTS(SELECT 1 FROM names WHERE username = $2 UNION SELECT 1 FROM old_names where old_username = $2 AND new_username != $1) AS username\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "has_old_username",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "89e1c60040ede9b7b9077bde7207df2a6907b9cead7536450beb8bcb23dbf8aa"
+}

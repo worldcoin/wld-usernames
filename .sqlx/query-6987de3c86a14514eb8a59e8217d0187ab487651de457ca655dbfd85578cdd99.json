@@ -32,6 +32,11 @@
         "ordinal": 5,
         "name": "updated_at",
         "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 6,
+        "name": "profile_picture_url",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -45,7 +50,8 @@
       false,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
   "hash": "6987de3c86a14514eb8a59e8217d0187ab487651de457ca655dbfd85578cdd99"
