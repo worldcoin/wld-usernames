@@ -8,6 +8,7 @@ use crate::{
 	blocklist::BlocklistExt,
 	config::{ConfigExt, DEVICE_USERNAME_REGEX, USERNAME_REGEX},
 	types::{ErrorResponse, Name, RenamePayload},
+	verify,
 };
 
 #[allow(dependency_on_unit_never_type_fallback)]
@@ -34,16 +35,17 @@ pub async fn rename(
 		));
 	}
 
-	match idkit::verify_proof(
+	match verify::dev_portal_verify_proof(
 		payload.into_proof(),
-		config.wld_app_id.clone(),
+		config.wld_app_id.to_string(),
 		"username",
 		(&payload.old_username, &payload.new_username),
+		config.developer_portal_url.clone(),
 	)
 	.await
 	{
 		Ok(()) => {},
-		Err(idkit::verify::Error::Verification(e)) => {
+		Err(verify::Error::Verification(e)) => {
 			return Err(ErrorResponse::validation_error(e.detail))
 		},
 		Err(_) => {

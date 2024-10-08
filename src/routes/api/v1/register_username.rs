@@ -8,6 +8,7 @@ use crate::{
 	blocklist::BlocklistExt,
 	config::{ConfigExt, DEVICE_USERNAME_REGEX, USERNAME_REGEX},
 	types::{ErrorResponse, Name, RegisterUsernamePayload},
+	verify,
 };
 
 #[allow(dependency_on_unit_never_type_fallback)]
@@ -17,16 +18,17 @@ pub async fn register_username(
 	Extension(blocklist): BlocklistExt,
 	Json(payload): Json<RegisterUsernamePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
-	match idkit::verify_proof(
+	match verify::dev_portal_verify_proof(
 		payload.into_proof(),
-		config.wld_app_id.clone(),
+		config.wld_app_id.to_string(),
 		"username",
 		(&payload.username, payload.address.to_checksum(None)),
+		config.developer_portal_url.clone(),
 	)
 	.await
 	{
 		Ok(()) => {},
-		Err(idkit::verify::Error::Verification(e)) => {
+		Err(verify::Error::Verification(e)) => {
 			return Err(ErrorResponse::validation_error(e.detail))
 		},
 		Err(_) => {
