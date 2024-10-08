@@ -52,7 +52,9 @@ jobs:
                   build-args: |
                         SQLX_OFFLINE: true
               env:
+                  SQLX_OFFLINE: true
                   DOCKER_BUILD_SUMMARY: false
+                  DOCKER_BUILD_RECORD_UPLOAD: false
 
             - name: Attest
               id: attest
@@ -61,5 +63,3 @@ jobs:
                   push-to-registry: true
                   subject-name: ghcr.io/${{ github.repository }}
                   subject-digest: ${{ steps.docker_build.outputs.digest }}
-                  DOCKER_BUILD_RECORD_UPLOAD: false
-                  SQLX_OFFLINE: true
