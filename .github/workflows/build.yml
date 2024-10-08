@@ -8,6 +8,8 @@ on:
 permissions:
     contents: read
     packages: write
+    id-token: write
+    attestations: write
 
 jobs:
     docker:
@@ -51,5 +53,13 @@ jobs:
                         SQLX_OFFLINE: true
               env:
                   DOCKER_BUILD_SUMMARY: false
+
+            - name: Attest
+              id: attest
+              uses: actions/attest-build-provenance@v1
+              with:
+                  push-to-registry: true
+                  subject-name: ghcr.io/${{ github.repository }}
+                  subject-digest: ${{ steps.docker_build.outputs.digest }}
                   DOCKER_BUILD_RECORD_UPLOAD: false
                   SQLX_OFFLINE: true
