@@ -9,6 +9,7 @@ use tracing_subscriber::{
 
 mod blocklist;
 mod config;
+mod verify;
 mod routes;
 mod server;
 mod types;

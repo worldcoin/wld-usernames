@@ -6,6 +6,7 @@ use sqlx::PgPool;
 use crate::{
 	config::ConfigExt,
 	types::{ErrorResponse, Name, UpdateUsernamePayload},
+	verify,
 };
 
 #[allow(dependency_on_unit_never_type_fallback)]
@@ -28,9 +29,9 @@ pub async fn update_record(
 		));
 	}
 
-	match idkit::verify_proof(
+	match verify::dev_portal_verify_proof(
 		payload.into_proof(),
-		config.wld_app_id.clone(),
+		config.wld_app_id.to_string(),
 		"username",
 		(
 			&username,
@@ -41,11 +42,12 @@ pub async fn update_record(
 				.map(ToString::to_string)
 				.unwrap_or_default(),
 		),
+		config.developer_portal_url.clone(),
 	)
 	.await
 	{
 		Ok(()) => {},
-		Err(idkit::verify::Error::Verification(e)) => {
+		Err(verify::Error::Verification(e)) => {
 			return Err(ErrorResponse::validation_error(e.detail))
 		},
 		Err(_) => {

@@ -26,6 +26,7 @@ pub struct Config {
 	pub ens_chain_id: u64,
 	pub ens_domain: String,
 	pub private_key: String,
+	pub developer_portal_url: String,
 	db_client: Option<PgPool>,
 	blocklist: Option<Blocklist>,
 }
@@ -74,6 +75,8 @@ impl Config {
 					env::var("WLD_APP_ID").context("WLD_APP_ID environment variable not set")?,
 				)
 			},
+			developer_portal_url: env::var("DEVELOPER_PORTAL_ENDPOINT")
+				.context("DEVELOPER_PORTAL_ENDPOINT environment variable not set")?,
 		})
 	}
 

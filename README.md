@@ -1,5 +1,5 @@
 ### Usernames
-To Run localy
+To Run locally
 ```
 cp .env.example .env
 docker compose up --detach
