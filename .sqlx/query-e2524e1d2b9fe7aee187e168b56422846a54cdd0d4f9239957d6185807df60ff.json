@@ -5,16 +5,11 @@
     "columns": [
       {
         "ordinal": 0,
-        "name": "id",
-        "type_info": "Int4"
-      },
-      {
-        "ordinal": 1,
         "name": "old_username",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 2,
+        "ordinal": 1,
         "name": "new_username",
         "type_info": "Varchar"
       }
@@ -25,7 +20,6 @@
       ]
     },
     "nullable": [
-      false,
       false,
       false
     ]
