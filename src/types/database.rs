@@ -46,7 +46,6 @@ impl Name {
 #[allow(dead_code)]
 #[derive(Debug, FromRow, PgInsert)]
 pub struct MovedRecord {
-	pub id: f64,
 	pub old_username: String,
 	pub new_username: String,
 }
