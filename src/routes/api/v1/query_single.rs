@@ -18,7 +18,7 @@ pub async fn query_single(
 	if let Some(name) = sqlx::query_as!(
 		Name,
 		"SELECT * FROM names WHERE username = $1 OR address = $1",
-		validate_address(&name_or_address).unwrap()
+		validate_address(&name_or_address)
 	)
 	.fetch_optional(&db)
 	.await?
@@ -51,9 +51,9 @@ pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::Transfo
 		})
 }
 
-pub fn validate_address(name_or_address: &str) -> Result<String, String> {
+pub fn validate_address(name_or_address: &str) -> String {
 	match Address::from_str(name_or_address) {
-		Ok(address) => Ok(address.to_checksum(None)),
-		Err(_) => Err(name_or_address.to_string()), // Return the original string if not an address
+		Ok(address) => address.to_checksum(None),
+		Err(_) => name_or_address.to_string(),
 	}
 }
