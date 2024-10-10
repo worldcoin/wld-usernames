@@ -1,3 +1,6 @@
+use std::str::FromStr;
+
+use alloy::primitives::Address;
 use axum::{
 	extract::Path,
 	response::{IntoResponse, Redirect, Response},
@@ -15,7 +18,7 @@ pub async fn query_single(
 	if let Some(name) = sqlx::query_as!(
 		Name,
 		"SELECT * FROM names WHERE username = $1 OR address = $1",
-		name_or_address
+		validate_address(&name_or_address)
 	)
 	.fetch_optional(&db)
 	.await?
@@ -46,4 +49,11 @@ pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::Transfo
 				"A redirect to the new username, if the queries username has recently changed.",
 			)
 		})
+}
+
+pub fn validate_address(name_or_address: &str) -> String {
+	match Address::from_str(name_or_address) {
+		Ok(address) => address.to_checksum(None),
+		Err(_) => name_or_address.to_string(),
+	}
 }
