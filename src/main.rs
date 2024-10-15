@@ -9,11 +9,11 @@ use tracing_subscriber::{
 
 mod blocklist;
 mod config;
-mod verify;
 mod routes;
 mod server;
 mod types;
 mod utils;
+mod verify;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -24,9 +24,12 @@ async fn main() -> Result<()> {
 			EnvFilter::try_from_default_env().unwrap_or_else(|_| "wld_usernames=info".into()),
 		))
 		.init();
+	tracing::info!("👩 Server started");
 
 	let config = Config::from_env().await?;
 	config.migrate_database().await?;
+
+	tracing::info!("👩‍🌾 Migrations run");
 
 	server::start(config).await
 }
