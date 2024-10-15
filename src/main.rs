@@ -3,9 +3,6 @@
 use anyhow::Result;
 use config::Config;
 use dotenvy::dotenv;
-use tracing_subscriber::{
-	prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
-};
 
 mod blocklist;
 mod config;
