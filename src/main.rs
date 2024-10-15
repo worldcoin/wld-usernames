@@ -19,11 +19,12 @@ mod verify;
 async fn main() -> Result<()> {
 	dotenv().ok();
 
-	tracing_subscriber::registry()
-		.with(tracing_subscriber::fmt::layer().with_filter(
-			EnvFilter::try_from_default_env().unwrap_or_else(|_| "wld_usernames=info".into()),
-		))
+	tracing_subscriber::fmt()
+		.json()
+		.with_target(false)
+		.flatten_event(true)
 		.init();
+
 	tracing::info!("👩 Server started");
 
 	let config = Config::from_env().await?;
