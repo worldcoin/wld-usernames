@@ -53,6 +53,10 @@ impl resolveCall {
 				let addr = addrCall::abi_decode(&self.data, true)?;
 				Method::Addr(addr.node.to_vec())
 			},
+			"85337958" => {
+				let addr = addrCall::abi_decode(&self.data, true)?;
+				Method::Addr(addr.node.to_vec())
+			},
 			"59d1d43c" => {
 				let addr = textCall::abi_decode(&self.data, true)?;
 				Method::Text(addr.node.to_vec(), addr.key)
