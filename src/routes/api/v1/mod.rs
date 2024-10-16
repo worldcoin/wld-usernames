@@ -11,15 +11,23 @@ mod rename;
 mod update_record;
 
 use ens_gateway::{docs as ens_gateway_docs, ens_gateway};
+use http::Method;
 use query_multiple::{docs as query_multiple_docs, query_multiple};
 use query_single::{docs as query_single_docs, query_single};
 use register_username::{docs as register_username_docs, register_username};
 use rename::{docs as rename_docs, rename};
+use tower_http::cors::{Any, CorsLayer};
 use update_record::{docs as update_record_docs, update_record};
 
 pub fn handler() -> ApiRouter {
+	let cors = CorsLayer::new()
+	.allow_origin(Any) // Or you can specify allowed origins
+	.allow_methods(vec![Method::GET, Method::POST, Method::OPTIONS]) // Allow OPTIONS method
+	.allow_headers(Any); // Allow any headers
+
 	ApiRouter::new()
 		.api_route("/ens", post_with(ens_gateway, ens_gateway_docs))
+		.layer(cors)
 		.api_route("/query", post_with(query_multiple, query_multiple_docs))
 		.api_route("/rename", post_with(rename, rename_docs))
 		.api_route(
