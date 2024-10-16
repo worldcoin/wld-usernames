@@ -128,6 +128,6 @@ async fn sign_response(
 
 	Ok(format!(
 		"0x{}",
-		hex::encode((response, expires_at, signature).abi_encode())
+		hex::encode((response, expires_at, signature).abi_encode_params())
 	))
 }
