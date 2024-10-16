@@ -66,6 +66,10 @@ impl resolveCall {
 				let addr = textCall::abi_decode(&self.data, true)?;
 				Method::Text(addr.node.to_vec(), addr.key)
 			},
+			"0xf1cb7e06" => {
+				let addr = textCall::abi_decode(&self.data, true)?;
+				Method::Text(addr.node.to_vec(), addr.key)
+			},
 			_ => {
 				tracing::error!("invalid method {:?}", hex::encode(&self.data[..4]).as_str());
 				bail!("invalid method {:?}", hex::encode(&self.data[..4]).as_str())
