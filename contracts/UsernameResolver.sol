@@ -5,6 +5,7 @@ import {ECDSA} from "solady-0.0.210/utils/ECDSA.sol";
 import {EIP712} from "solady-0.0.210/utils/EIP712.sol";
 import {Ownable} from "solady-0.0.210/auth/Ownable.sol";
 import {IExternalResolver} from "./interfaces/IExternalResolver.sol";
+import {console} from "forge-std-1.8.2/console.sol";
 
 /// @title World App Resolver
 /// @author Miguel Piedrafita
@@ -118,17 +119,13 @@ contract UsernameResolver is Ownable, EIP712 {
         );
 
         address signer = ECDSA.recover(
-            _hashTypedData(
-                keccak256(
-                    abi.encode(
-                        keccak256(
-                            "GatewayResponse(address sender,uint256 expiresAt,bytes32 requestHash,bytes32 responseHash)"
-                        ),
-                        sender,
-                        expiresAt,
-                        keccak256(requestData),
-                        keccak256(responseData)
-                    )
+            keccak256(
+                abi.encodePacked(
+                    hex"1900",
+                    sender,
+                    expiresAt,
+                    keccak256(requestData),
+                    keccak256(responseData)
                 )
             ),
             signature

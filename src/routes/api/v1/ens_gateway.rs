@@ -1,6 +1,6 @@
 use alloy::{
-	primitives::{keccak256, Address},
-	signers::{local::PrivateKeySigner, Signer},
+	primitives::{keccak256, Address, U256, U64},
+	signers::{local::PrivateKeySigner, Signature, Signer},
 	sol_types::{eip712_domain, SolCall, SolValue},
 };
 use axum::Extension;
@@ -108,39 +108,26 @@ async fn sign_response(
 	request_data: &[u8],
 	sender: crate::types::Address,
 ) -> Result<String, anyhow::Error> {
-	let expires_at = Uint::from_i64(
-		Utc::now()
-			.checked_add_signed(TimeDelta::hours(1))
-			.unwrap()
-			.timestamp(),
-	)
-	.unwrap();
+	let expires_at = Utc::now()
+		.checked_add_signed(TimeDelta::hours(1))
+		.unwrap()
+		.timestamp();
 
 	let signer = PrivateKeySigner::from_str(&config.private_key).unwrap();
 
-	let data = GatewayResponse {
-		sender: sender.0,
-		expiresAt: expires_at,
-		responseHash: keccak256(&response),
-		requestHash: keccak256(request_data),
-	};
+	let data = (
+		U256::from(0x1900),
+		sender.0,
+		U64::from(expires_at).to_be_bytes_vec(),
+		keccak256(request_data),
+		keccak256(&response),
+	)
+		.abi_encode_packed();
 
-	let domain = eip712_domain! {
-		name: "World App Usernames",
-		version: "1",
-		chain_id: config.ens_chain_id,
-		verifying_contract: sender.0,
-	};
-
-	let signature = signer
-		.sign_typed_data(&data, &domain)
-		.await?
-		.inner()
-		.to_bytes()
-		.to_vec();
+	let signature: Signature = signer.sign_hash(&keccak256(data)).await?;
 
 	Ok(format!(
 		"0x{}",
-		hex::encode((response, expires_at, signature).abi_encode_params())
+		hex::encode((response, expires_at, signature.as_bytes().to_vec()).abi_encode_params())
 	))
 }
