@@ -64,7 +64,7 @@ pub async fn ens_gateway(
 			(Address::parse_checksummed(record.address, None).unwrap()).abi_encode()
 		},
 		Method::AddrMultichain | Method::Name => {
-			return Err(dbg!(ENSErrorResponse::new("Not implemented.")));
+			return Err(ENSErrorResponse::new("Not implemented."));
 		},
 		_ => ().abi_encode(),
 	};
