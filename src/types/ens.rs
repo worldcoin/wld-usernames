@@ -16,7 +16,7 @@ sol! {
 
 	function addr(bytes node) returns (bytes memory);
 	function addr(bytes32 node) returns (bytes memory);
-	function addr(bytes node, uint coinType) returns (bytes memory);
+	function addr(bytes32 node, uint coinType) returns (bytes memory);
 	function text(bytes32 node, string key) returns (string);
 
 	struct GatewayResponse {
