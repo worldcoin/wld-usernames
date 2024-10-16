@@ -59,6 +59,7 @@ pub async fn ens_gateway(
 			if node != namehash(&name) {
 				return Err(ENSErrorResponse::new("Invalid node hash provided."));
 			}
+			tracing::info!("Address: {:?}", record.address);
 
 			(Address::parse_checksummed(record.address, None).unwrap()).abi_encode()
 		},
