@@ -16,7 +16,7 @@ sol! {
 
 	function addr(bytes node) returns (bytes memory);
 	function addr(bytes32 node) returns (bytes memory);
-	function addr(bytes node, uint coinType) returns (bytes memory);
+	function addr(bytes32 node, uint coinType) returns (bytes memory);
 	function text(bytes32 node, string key) returns (string);
 
 	struct GatewayResponse {
@@ -63,10 +63,6 @@ impl resolveCall {
 			},
 			"b8f2bbb4" => Method::InterfaceImplementer,
 			"59d1d43c" => {
-				let addr = textCall::abi_decode(&self.data, true)?;
-				Method::Text(addr.node.to_vec(), addr.key)
-			},
-			"0xf1cb7e06" => {
 				let addr = textCall::abi_decode(&self.data, true)?;
 				Method::Text(addr.node.to_vec(), addr.key)
 			},
