@@ -39,6 +39,8 @@ pub async fn ens_gateway(
 
 	let result = match method {
 		Method::Text(node, key) => {
+			tracing::info!("Text: {:?}", record.address);
+
 			if node != namehash(&name) {
 				return Err(ENSErrorResponse::new("Invalid node hash provided."));
 			}
@@ -63,9 +65,14 @@ pub async fn ens_gateway(
 			(Address::parse_checksummed(record.address, None).unwrap()).abi_encode()
 		},
 		Method::AddrMultichain | Method::Name => {
+			tracing::info!("AddrMultichain: {:?}", record.address);
+
 			return Err(ENSErrorResponse::new("Not implemented."));
 		},
-		_ => ().abi_encode(),
+		_ => {
+			tracing::info!("No Method: {:?}", record.address);
+			().abi_encode()
+		},
 	};
 
 	sign_response(config, result, &req_data, request_payload.sender)
