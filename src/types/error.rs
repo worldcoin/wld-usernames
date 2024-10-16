@@ -58,6 +58,7 @@ impl<E: std::error::Error> From<E> for ErrorResponse {
 
 impl IntoResponse for ErrorResponse {
 	fn into_response(self) -> axum::response::Response {
+		tracing::error!(error = %self.error, status = ?self.status);
 		(self.status, Json(ErrorResponseSchema { error: self.error })).into_response()
 	}
 }

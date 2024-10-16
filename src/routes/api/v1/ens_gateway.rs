@@ -25,18 +25,23 @@ pub async fn ens_gateway(
 	Extension(db): Extension<PgPool>,
 	Json(request_payload): Json<ENSQueryPayload>,
 ) -> Result<Json<ENSResponse>, ENSErrorResponse> {
+	// TODO: Remove these after figuring out what ENS is failing on
+	tracing::debug!("Request payload: {:?}", request_payload);
 	let (req_data, name, method) = decode_payload(&request_payload)
 		.map_err(|_| ENSErrorResponse::new("Failed to decode payload."))?;
 
+	tracing::debug!("Decoded payload: {:?}", request_payload);
 	let username = name
 		.strip_suffix(&format!(".{}", config.ens_domain))
 		.ok_or_else(|| ENSErrorResponse::new("Name not found."))?;
 
+	tracing::debug!("Found Username: {:?}", request_payload);
 	let record = sqlx::query_as!(Name, "SELECT * FROM names WHERE username = $1", username)
 		.fetch_one(&db)
 		.await
 		.map_err(|_| ENSErrorResponse::new("Name not found."))?;
 
+	tracing::debug!("Found Record: {:?}", record);
 	let result = match method {
 		Method::Text(node, key) => {
 			tracing::info!("Text: {:?}", record.address);
