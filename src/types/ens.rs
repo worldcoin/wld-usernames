@@ -14,7 +14,9 @@ sol! {
 		bytes calldata data
 	);
 
-	function addr(bytes32 node) returns (address);
+	function addr(bytes node) returns (bytes memory);
+	function addr(bytes32 node) returns (bytes memory);
+	function addr(bytes node, uint coinType) returns (bytes memory);
 	function text(bytes32 node, string key) returns (string);
 
 	struct GatewayResponse {
@@ -47,16 +49,19 @@ impl resolveCall {
 			"691f3431" => Method::Name,
 			"c8690233" => Method::PubKey,
 			"bc1c58d1" => Method::ContentHash,
-			"f1cb7e06" => Method::AddrMultichain,
-			"b8f2bbb4" => Method::InterfaceImplementer,
-			"3b3b57de" => {
-				let addr = addrCall::abi_decode(&self.data, true)?;
-				Method::Addr(addr.node.to_vec())
-			},
 			"85337958" => {
-				let addr = addrCall::abi_decode(&self.data, true)?;
+				let addr = addr_0Call::abi_decode(&self.data, true)?;
 				Method::Addr(addr.node.to_vec())
 			},
+			"3b3b57de" => {
+				let addr = addr_1Call::abi_decode(&self.data, true)?;
+				Method::Addr(addr.node.to_vec())
+			},
+			"f1cb7e06" => {
+				let addr = addr_2Call::abi_decode(&self.data, true)?;
+				Method::Addr(addr.node.to_vec())
+			},
+			"b8f2bbb4" => Method::InterfaceImplementer,
 			"59d1d43c" => {
 				let addr = textCall::abi_decode(&self.data, true)?;
 				Method::Text(addr.node.to_vec(), addr.key)
