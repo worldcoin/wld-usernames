@@ -1,31 +1,35 @@
 use alloy::{
-	primitives::{keccak256, Address},
-	signers::{local::PrivateKeySigner, Signer},
-	sol_types::{eip712_domain, SolCall, SolValue},
+	primitives::{keccak256, Address, U256, U64},
+	signers::{local::PrivateKeySigner, Signature, Signer},
+	sol_types::{SolCall, SolValue},
 };
-use axum::Extension;
+use axum::{body::Bytes, extract::Extension, http::StatusCode, response::IntoResponse};
 use axum_jsonschema::Json;
 use chrono::{TimeDelta, Utc};
-use num_traits::FromPrimitive;
-use ruint::Uint;
+use serde_json::from_slice;
 use sqlx::PgPool;
 use std::{str::FromStr, sync::Arc};
 
 use crate::{
 	config::{Config, ConfigExt},
-	types::{
-		ENSErrorResponse, ENSQueryPayload, ENSResponse, GatewayResponse, Method, Name,
-		ResolveRequest,
-	},
+	types::{ENSErrorResponse, ENSQueryPayload, ENSResponse, Method, Name, ResolveRequest},
 	utils::namehash,
 };
 
 pub async fn ens_gateway(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<PgPool>,
-	Json(request_payload): Json<ENSQueryPayload>,
+	body: Bytes, // Accept the raw request body as Bytes
 ) -> Result<Json<ENSResponse>, ENSErrorResponse> {
 	// TODO: Remove these after figuring out what ENS is failing on
+	let request_payload: ENSQueryPayload = match from_slice(&body) {
+		Ok(payload) => payload, // Successfully parsed
+		Err(_) => {
+			// Return an error response if JSON parsing fails
+			return Err(ENSErrorResponse::new("Failed to parse JSON payload."));
+		},
+	};
+
 	tracing::info!("Request payload: {:?}", request_payload);
 	let (req_data, name, method) = decode_payload(&request_payload)
 		.map_err(|_| ENSErrorResponse::new("Failed to decode payload."))?;
@@ -108,39 +112,26 @@ async fn sign_response(
 	request_data: &[u8],
 	sender: crate::types::Address,
 ) -> Result<String, anyhow::Error> {
-	let expires_at = Uint::from_i64(
-		Utc::now()
-			.checked_add_signed(TimeDelta::hours(1))
-			.unwrap()
-			.timestamp(),
-	)
-	.unwrap();
+	let expires_at = Utc::now()
+		.checked_add_signed(TimeDelta::hours(1))
+		.unwrap()
+		.timestamp();
 
 	let signer = PrivateKeySigner::from_str(&config.private_key).unwrap();
 
-	let data = GatewayResponse {
-		sender: sender.0,
-		expiresAt: expires_at,
-		responseHash: keccak256(&response),
-		requestHash: keccak256(request_data),
-	};
+	let data: Vec<u8> = (
+		[0x19u8, 0x00u8],
+		sender.0,
+		U64::from(expires_at).to_be_bytes_vec(),
+		keccak256(request_data).to_vec(),
+		keccak256(&response).to_vec(),
+	)
+		.abi_encode_packed();
 
-	let domain = eip712_domain! {
-		name: "World App Usernames",
-		version: "1",
-		chain_id: config.ens_chain_id,
-		verifying_contract: sender.0,
-	};
-
-	let signature = signer
-		.sign_typed_data(&data, &domain)
-		.await?
-		.inner()
-		.to_bytes()
-		.to_vec();
+	let signature: Signature = signer.sign_hash(&keccak256(data)).await?;
 
 	Ok(format!(
 		"0x{}",
-		hex::encode((response, expires_at, signature).abi_encode_params())
+		hex::encode((response, expires_at, signature.as_bytes().to_vec()).abi_encode_params())
 	))
 }
