@@ -1,31 +1,35 @@
 use alloy::{
 	primitives::{keccak256, Address, U256, U64},
 	signers::{local::PrivateKeySigner, Signature, Signer},
-	sol_types::{eip712_domain, SolCall, SolValue},
+	sol_types::{SolCall, SolValue},
 };
-use axum::Extension;
+use axum::{body::Bytes, extract::Extension, http::StatusCode, response::IntoResponse};
 use axum_jsonschema::Json;
 use chrono::{TimeDelta, Utc};
-use num_traits::FromPrimitive;
-use ruint::Uint;
+use serde_json::from_slice;
 use sqlx::PgPool;
 use std::{str::FromStr, sync::Arc};
 
 use crate::{
 	config::{Config, ConfigExt},
-	types::{
-		ENSErrorResponse, ENSQueryPayload, ENSResponse, GatewayResponse, Method, Name,
-		ResolveRequest,
-	},
+	types::{ENSErrorResponse, ENSQueryPayload, ENSResponse, Method, Name, ResolveRequest},
 	utils::namehash,
 };
 
 pub async fn ens_gateway(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<PgPool>,
-	Json(request_payload): Json<ENSQueryPayload>,
+	body: Bytes, // Accept the raw request body as Bytes
 ) -> Result<Json<ENSResponse>, ENSErrorResponse> {
 	// TODO: Remove these after figuring out what ENS is failing on
+	let request_payload: ENSQueryPayload = match from_slice(&body) {
+		Ok(payload) => payload, // Successfully parsed
+		Err(_) => {
+			// Return an error response if JSON parsing fails
+			return Err(ENSErrorResponse::new("Failed to parse JSON payload."));
+		},
+	};
+
 	tracing::info!("Request payload: {:?}", request_payload);
 	let (req_data, name, method) = decode_payload(&request_payload)
 		.map_err(|_| ENSErrorResponse::new("Failed to decode payload."))?;
@@ -115,12 +119,12 @@ async fn sign_response(
 
 	let signer = PrivateKeySigner::from_str(&config.private_key).unwrap();
 
-	let data = (
-		U256::from(0x1900),
+	let data: Vec<u8> = (
+		[0x19u8, 0x00u8],
 		sender.0,
 		U64::from(expires_at).to_be_bytes_vec(),
-		keccak256(request_data),
-		keccak256(&response),
+		keccak256(request_data).to_vec(),
+		keccak256(&response).to_vec(),
 	)
 		.abi_encode_packed();
 
