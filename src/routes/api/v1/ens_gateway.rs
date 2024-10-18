@@ -30,26 +30,20 @@ pub async fn ens_gateway(
 		},
 	};
 
-	tracing::info!("Request payload: {:?}", request_payload);
 	let (req_data, name, method) = decode_payload(&request_payload)
 		.map_err(|_| ENSErrorResponse::new("Failed to decode payload."))?;
 
-	tracing::info!("Decoded payload: {:?}", request_payload);
 	let username = name
 		.strip_suffix(&format!(".{}", config.ens_domain))
 		.ok_or_else(|| ENSErrorResponse::new("Name not found."))?;
 
-	tracing::info!("Found Username: {:?}", request_payload);
 	let record = sqlx::query_as!(Name, "SELECT * FROM names WHERE username = $1", username)
 		.fetch_one(&db)
 		.await
 		.map_err(|_| ENSErrorResponse::new("Name not found."))?;
 
-	tracing::info!("Found Record: {:?}", record);
 	let result: Vec<u8> = match method {
 		Method::Text(node, key) => {
-			tracing::info!("Text: {:?}", record.address);
-
 			if node != namehash(&name) {
 				return Err(ENSErrorResponse::new("Invalid node hash provided."));
 			}
@@ -70,19 +64,13 @@ pub async fn ens_gateway(
 			if node != namehash(&name) {
 				return Err(ENSErrorResponse::new("Invalid node hash provided."));
 			}
-			tracing::info!("Address: {:?}", record.address);
 
 			(Address::parse_checksummed(record.address, None).unwrap()).abi_encode()
 		},
 		Method::AddrMultichain | Method::Name => {
-			tracing::info!("AddrMultichain: {:?}", record.address);
-
 			return Err(ENSErrorResponse::new("Not implemented."));
 		},
-		_ => {
-			tracing::info!("No Method: {:?}", record.address);
-			().abi_encode()
-		},
+		_ => ().abi_encode(),
 	};
 
 	sign_response(config, result, &req_data, request_payload.sender)
