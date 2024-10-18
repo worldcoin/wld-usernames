@@ -51,7 +51,6 @@ impl ErrorResponse {
 impl<E: std::error::Error> From<E> for ErrorResponse {
 	fn from(err: E) -> Self {
 		tracing::error!(err = ?err);
-
 		Self::server_error("Internal Server Error".to_string())
 	}
 }
