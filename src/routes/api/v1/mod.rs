@@ -27,8 +27,9 @@ pub fn handler() -> ApiRouter {
 
 	ApiRouter::new()
 		.api_route("/ens", post_with(ens_gateway, ens_gateway_docs))
-		.layer(cors)
+		.layer(cors.clone())
 		.api_route("/query", post_with(query_multiple, query_multiple_docs))
+		.layer(cors.clone())
 		.api_route("/rename", post_with(rename, rename_docs))
 		.api_route(
 			"/register",
