@@ -52,7 +52,7 @@ impl ErrorResponse {
 }
 
 impl<E: std::error::Error> From<E> for ErrorResponse {
-	fn from(err: E) -> Self {
+	fn from(_: E) -> Self {
 		Self::server_error("Internal Server Error".to_string())
 	}
 }

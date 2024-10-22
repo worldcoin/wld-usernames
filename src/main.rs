@@ -1,9 +1,5 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 
-use anyhow::Result;
-use config::Config;
-use dotenvy::dotenv;
-
 mod blocklist;
 mod config;
 mod routes;
@@ -13,8 +9,8 @@ mod utils;
 mod verify;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-	dotenv().ok();
+async fn main() -> anyhow::Result<()> {
+	dotenvy::dotenv().ok();
 
 	tracing_subscriber::fmt()
 		.json()
@@ -24,7 +20,7 @@ async fn main() -> Result<()> {
 
 	tracing::info!("👩 Server started");
 
-	let config = Config::from_env().await?;
+	let config = config::Config::from_env().await?;
 	config.migrate_database().await?;
 
 	tracing::info!("👩‍🌾 Migrations run");

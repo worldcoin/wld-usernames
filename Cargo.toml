@@ -2,26 +2,30 @@
 license = "MIT"
 edition = "2021"
 version = "0.1.0"
+readme = "README.md"
 name = "wld-usernames"
 authors = ["Miguel Piedrafita <rust@miguel.build>"]
+repository = "https://github.com/worldcoin/wld-usernames"
+description = "Backend powering World App username registration and querying."
 
 [dependencies]
-axum = "0.7.5"
+axum = "0.7.7"
 hex = "0.4.3"
 http = "1.1.0"
 idkit = "0.1.2"
-regex = "1.10.6"
-anyhow = "1.0.86"
+regex = "1.11.0"
+anyhow = "1.0.91"
 tracing = "0.1.40"
 dotenvy = "0.15.7"
-thiserror = "1.0.63"
+thiserror = "1.0.65"
 num-traits = "0.2.19"
-serde_json = "1.0.127"
+serde_json = "1.0.132"
 url = { version = "2.5.2", features = ["serde"] }
-tokio = { version = "1.39.3", features = ["full"] }
+tokio = { version = "1.41.0", features = ["full"] }
 chrono = { version = "0.4.38", features = ["serde"] }
-reqwest = { version = "0.12.7", features = ["json"] }
-serde = { version = "1.0.209", features = ["derive"] }
+reqwest = { version = "0.12.8", features = ["json"] }
+serde = { version = "1.0.213", features = ["derive"] }
+tower-http = { version = "0.6.1", features = ["cors"] }
 axum-jsonschema = { version = "0.8.0", features = ["aide"] }
 schemars = { version = "0.8.21", features = ["chrono", "url"] }
 aide = { version = "0.13.4", features = ["axum", "macros", "scalar"] }
@@ -29,7 +33,7 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 ruint = { version = "1.12.3", default-features = false, features = [
     "num-traits",
 ] }
-sqlxinsert = { version = "0.10.0", default-features = false, features = [
+sqlxinsert = { version = "0.11.0", default-features = false, features = [
     "postgres",
 ] }
 alloy = { git = "https://github.com/alloy-rs/alloy.git", features = [
@@ -37,7 +41,7 @@ alloy = { git = "https://github.com/alloy-rs/alloy.git", features = [
     "sol-types",
     "signer-local",
 ] }
-sqlx = { version = "0.8.1", features = [
+sqlx = { version = "0.8.2", features = [
     "chrono",
     "macros",
     "migrate",
@@ -45,7 +49,6 @@ sqlx = { version = "0.8.1", features = [
     "tls-rustls",
     "runtime-tokio",
 ], default-features = false }
-tower-http = { version="0.6.1", features= ["cors"]}
 
 
 [build-dependencies]

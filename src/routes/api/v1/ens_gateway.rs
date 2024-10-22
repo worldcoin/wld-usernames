@@ -1,9 +1,9 @@
 use alloy::{
-	primitives::{keccak256, Address, U256, U64},
+	primitives::{keccak256, Address, U64},
 	signers::{local::PrivateKeySigner, Signature, Signer},
 	sol_types::{SolCall, SolValue},
 };
-use axum::{body::Bytes, extract::Extension, http::StatusCode, response::IntoResponse};
+use axum::{body::Bytes, extract::Extension};
 use axum_jsonschema::Json;
 use chrono::{TimeDelta, Utc};
 use serde_json::from_slice;

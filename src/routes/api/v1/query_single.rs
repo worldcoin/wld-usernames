@@ -52,8 +52,8 @@ pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::Transfo
 }
 
 pub fn validate_address(name_or_address: &str) -> String {
-	match Address::from_str(name_or_address) {
-		Ok(address) => address.to_checksum(None),
-		Err(_) => name_or_address.to_string(),
-	}
+	Address::from_str(name_or_address).map_or_else(
+		|_| name_or_address.to_string(),
+		|address| address.to_checksum(None),
+	)
 }

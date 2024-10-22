@@ -23,7 +23,6 @@ pub static DEVICE_USERNAME_REGEX: LazyLock<Regex> =
 #[derive(Debug)]
 pub struct Config {
 	pub wld_app_id: AppId,
-	pub ens_chain_id: u64,
 	pub ens_domain: String,
 	pub private_key: String,
 	pub developer_portal_url: String,
@@ -66,10 +65,6 @@ impl Config {
 				.context("ENS_DOMAIN environment variable not set")?,
 			private_key: env::var("PRIVATE_KEY")
 				.context("PRIVATE_KEY environment variable not set")?,
-			ens_chain_id: env::var("ENS_CHAIN_ID")
-				.context("ENS_CHAIN_ID environment variable not set")?
-				.parse()
-				.context("ENS_CHAIN_ID could not be parsed as a number")?,
 			wld_app_id: unsafe {
 				AppId::new_unchecked(
 					env::var("WLD_APP_ID").context("WLD_APP_ID environment variable not set")?,

@@ -16,6 +16,7 @@ pub enum Error {
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code, reason = "Fields are used on the HTTP response.")]
 pub struct ErrorResponse {
 	pub code: String,
 	pub detail: String,
@@ -48,7 +49,7 @@ pub async fn dev_portal_verify_proof<V: alloy::sol_types::SolValue + Send>(
 	let signal = signal.abi_encode_packed();
 
 	let response = reqwest::Client::new()
-		.post(format!("{}/api/v2/verify/{}", developer_portal_url, app_id))
+		.post(format!("{developer_portal_url}/api/v2/verify/{app_id}"))
 		.header(header::USER_AGENT, "idkit-rs")
 		.json(&VerificationRequest {
 			proof: proof.proof,

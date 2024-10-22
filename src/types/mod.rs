@@ -6,7 +6,7 @@ mod response;
 mod wrappers;
 
 pub use database::{MovedRecord, Name};
-pub use ens::{resolveCall as ResolveRequest, GatewayResponse, Method};
+pub use ens::{resolveCall as ResolveRequest, Method};
 pub use error::{ENSErrorResponse, ErrorResponse};
 pub use request::{
 	ENSQueryPayload, QueryAddressesPayload, RegisterUsernamePayload, RenamePayload,
