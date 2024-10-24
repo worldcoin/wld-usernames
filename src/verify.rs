@@ -16,7 +16,7 @@ pub enum Error {
 }
 
 #[derive(Debug, serde::Deserialize)]
-#[allow(dead_code, reason = "Fields are used on the HTTP response.")]
+#[allow(dead_code)] // Fields are used on the HTTP response
 pub struct ErrorResponse {
 	pub code: String,
 	pub detail: String,

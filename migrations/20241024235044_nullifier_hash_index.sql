@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_names_nullifier_hash ON names (nullifier_hash);
