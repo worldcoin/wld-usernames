@@ -29,7 +29,7 @@ pub fn handler() -> ApiRouter {
 		.api_route("/ens", post_with(ens_gateway, ens_gateway_docs))
 		.layer(cors.clone())
 		.api_route("/query", post_with(query_multiple, query_multiple_docs))
-		.layer(cors)
+		.layer(cors.clone())
 		.api_route("/rename", post_with(rename, rename_docs))
 		.api_route(
 			"/register",
@@ -37,6 +37,8 @@ pub fn handler() -> ApiRouter {
 		)
 		.api_route(
 			"/:name",
-			get_with(query_single, query_single_docs).post_with(update_record, update_record_docs),
+			get_with(query_single, query_single_docs)
+				.post_with(update_record, update_record_docs)
+				.layer(cors),
 		)
 }
