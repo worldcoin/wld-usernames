@@ -8,6 +8,7 @@ mod query_multiple;
 mod query_single;
 mod register_username;
 mod rename;
+mod search;
 mod update_record;
 
 use ens_gateway::{docs as ens_gateway_docs, ens_gateway};
@@ -16,6 +17,7 @@ use query_multiple::{docs as query_multiple_docs, query_multiple};
 use query_single::{docs as query_single_docs, query_single};
 use register_username::{docs as register_username_docs, register_username};
 use rename::{docs as rename_docs, rename};
+use search::{docs as search_docs, search};
 use tower_http::cors::{Any, CorsLayer};
 use update_record::{docs as update_record_docs, update_record};
 
@@ -39,6 +41,10 @@ pub fn handler() -> ApiRouter {
 			"/:name",
 			get_with(query_single, query_single_docs)
 				.post_with(update_record, update_record_docs)
-				.layer(cors),
+				.layer(cors.clone()),
+		)
+		.api_route(
+			"/search/:username",
+			get_with(search, search_docs).layer(cors),
 		)
 }
