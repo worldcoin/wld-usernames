@@ -23,10 +23,6 @@ pub async fn search(
 	.fetch_all(&db)
 	.await?;
 
-	if names.is_empty() {
-		return Err(ErrorResponse::not_found("No usernames found.".to_string()));
-	}
-
 	return Ok(Json(
 		names
 			.into_iter()
