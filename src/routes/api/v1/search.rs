@@ -34,6 +34,5 @@ pub async fn search(
 
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
 	op.description("Search for up to 10 usernames")
-		.response::<404, ErrorResponse>()
 		.response::<200, Json<Vec<UsernameRecord>>>()
 }
