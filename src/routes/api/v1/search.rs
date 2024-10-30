@@ -11,7 +11,6 @@ use sqlx::PgPool;
 pub async fn search(
 	Extension(db): Extension<PgPool>,
 	Path(username): Path<String>,
-	// Query(params): Query<SearchParams>,
 ) -> Result<Response, ErrorResponse> {
 	let names = sqlx::query_as!(
 		Name,
