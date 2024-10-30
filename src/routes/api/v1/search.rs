@@ -5,13 +5,8 @@ use axum::{
 	Extension,
 };
 use axum_jsonschema::Json;
-// use serde::Deserialize;
-use sqlx::PgPool;
 
-// #[derive(Deserialize)]
-// struct SearchParams {
-// 	username: String,
-// }
+use sqlx::PgPool;
 
 pub async fn search(
 	Extension(db): Extension<PgPool>,
