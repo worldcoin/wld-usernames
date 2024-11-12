@@ -48,7 +48,8 @@ pub async fn update_record(
 	{
 		Ok(()) => {},
 		Err(verify::Error::Verification(e)) => {
-			return Err(ErrorResponse::validation_error(e.detail))
+			tracing::error!("Update Record Verification Error: {}", payload);
+			return Err(ErrorResponse::validation_error(e.detail));
 		},
 		Err(_) => {
 			return Err(ErrorResponse::server_error(
