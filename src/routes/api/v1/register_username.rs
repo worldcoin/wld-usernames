@@ -29,7 +29,7 @@ pub async fn register_username(
 	{
 		Ok(()) => {},
 		Err(verify::Error::Verification(e)) => {
-			tracing::error!("Register Verification Error: {}", payload);
+			tracing::error!("Register Verification Error: {:?}", payload);
 			return Err(ErrorResponse::validation_error(e.detail));
 		},
 		Err(_) => {
