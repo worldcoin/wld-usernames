@@ -46,7 +46,7 @@ pub async fn rename(
 	{
 		Ok(()) => {},
 		Err(verify::Error::Verification(e)) => {
-			tracing::error!("Rename Verification Error: {}", payload);
+			tracing::error!("Rename Verification Error: {:?}", payload);
 			return Err(ErrorResponse::validation_error(e.detail));
 		},
 		Err(_) => {
