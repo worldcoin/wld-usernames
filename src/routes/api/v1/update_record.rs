@@ -48,13 +48,22 @@ pub async fn update_record(
 	{
 		Ok(()) => {},
 		Err(verify::Error::Verification(e)) => {
-			tracing::error!("Update Record Verification Error: {:?}", payload);
+			tracing::error!(
+				"Update Record Verification Error: {}, Payload: {:?}",
+				e.detail,
+				payload
+			);
 			return Err(ErrorResponse::validation_error(e.detail));
 		},
-		Err(_) => {
+		Err(e) => {
+			tracing::error!(
+				"Update Record Server Error: {}, Payload: {:?}",
+				e.to_string(),
+				payload
+			);
 			return Err(ErrorResponse::server_error(
 				"Failed to verify World ID proof".to_string(),
-			))
+			));
 		},
 	};
 
