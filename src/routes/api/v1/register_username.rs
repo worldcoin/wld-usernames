@@ -29,13 +29,22 @@ pub async fn register_username(
 	{
 		Ok(()) => {},
 		Err(verify::Error::Verification(e)) => {
-			tracing::error!("Register Verification Error: {:?}", payload);
+			tracing::error!(
+				"Register Verification Error: {}, Payload: {:?}",
+				e.detail,
+				payload
+			);
 			return Err(ErrorResponse::validation_error(e.detail));
 		},
-		Err(_) => {
+		Err(e) => {
+			tracing::error!(
+				"Register Server Error: {}, Payload: {:?}",
+				e.to_string(),
+				payload
+			);
 			return Err(ErrorResponse::server_error(
 				"Failed to verify World ID proof".to_string(),
-			))
+			));
 		},
 	};
 
