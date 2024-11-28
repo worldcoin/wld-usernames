@@ -1,4 +1,7 @@
-use crate::types::{ErrorResponse, Name, UsernameRecord};
+use crate::{
+	config::Db,
+	types::{ErrorResponse, Name, UsernameRecord},
+};
 use axum::{
 	extract::Path,
 	response::{IntoResponse, Response},
@@ -6,10 +9,8 @@ use axum::{
 };
 use axum_jsonschema::Json;
 
-use sqlx::PgPool;
-
 pub async fn search(
-	Extension(db): Extension<PgPool>,
+	Extension(db): Extension<Db>,
 	Path(username): Path<String>,
 ) -> Result<Response, ErrorResponse> {
 	let names = sqlx::query_as!(
@@ -20,7 +21,7 @@ pub async fn search(
 			LIMIT 10;",
 		username
 	)
-	.fetch_all(&db)
+	.fetch_all(&db.read_only)
 	.await?;
 
 	return Ok(Json(

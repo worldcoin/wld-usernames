@@ -2,11 +2,10 @@ use axum::Extension;
 use axum_jsonschema::Json;
 use http::StatusCode;
 use idkit::session::VerificationLevel;
-use sqlx::PgPool;
 
 use crate::{
 	blocklist::BlocklistExt,
-	config::{ConfigExt, DEVICE_USERNAME_REGEX, USERNAME_REGEX},
+	config::{ConfigExt, Db, DEVICE_USERNAME_REGEX, USERNAME_REGEX},
 	types::{ErrorResponse, Name, RegisterUsernamePayload},
 	verify,
 };
@@ -14,7 +13,7 @@ use crate::{
 #[allow(dependency_on_unit_never_type_fallback)]
 pub async fn register_username(
 	Extension(config): ConfigExt,
-	Extension(db): Extension<PgPool>,
+	Extension(db): Extension<Db>,
 	Extension(blocklist): BlocklistExt,
 	Json(payload): Json<RegisterUsernamePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
@@ -70,7 +69,7 @@ pub async fn register_username(
             &payload.username,
             &payload.nullifier_hash
         )
-        .fetch_one(&db)
+        .fetch_one(&db.read_write)
         .await?;
 
 	if uniqueness_check.username.unwrap_or_default() {
@@ -92,7 +91,7 @@ pub async fn register_username(
 		payload.nullifier_hash,
 		&payload.verification_level,
 	)
-	.insert(&db, "names")
+	.insert(&db.read_write, "names")
 	.await?;
 
 	Ok(StatusCode::CREATED)

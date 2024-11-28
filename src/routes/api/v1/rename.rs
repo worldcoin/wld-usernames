@@ -2,11 +2,10 @@ use axum::Extension;
 use axum_jsonschema::Json;
 use http::StatusCode;
 use idkit::session::VerificationLevel;
-use sqlx::PgPool;
 
 use crate::{
 	blocklist::BlocklistExt,
-	config::{ConfigExt, DEVICE_USERNAME_REGEX, USERNAME_REGEX},
+	config::{ConfigExt, Db, DEVICE_USERNAME_REGEX, USERNAME_REGEX},
 	types::{ErrorResponse, Name, RenamePayload},
 	verify,
 };
@@ -14,7 +13,7 @@ use crate::{
 #[allow(dependency_on_unit_never_type_fallback)]
 pub async fn rename(
 	Extension(config): ConfigExt,
-	Extension(db): Extension<PgPool>,
+	Extension(db): Extension<Db>,
 	Extension(blocklist): BlocklistExt,
 	Json(payload): Json<RenamePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
@@ -23,7 +22,7 @@ pub async fn rename(
 		"SELECT * FROM names WHERE username = $1",
 		&payload.old_username
 	)
-	.fetch_optional(&db)
+	.fetch_optional(&db.read_write)
 	.await?
 	else {
 		return Err(ErrorResponse::not_found("Username not found".to_string()));
@@ -88,7 +87,7 @@ pub async fn rename(
 		&payload.old_username,
 		&payload.new_username,
 	)
-	.fetch_one(&db)
+	.fetch_one(&db.read_write)
 	.await?;
 
 	if uniqueness_check.username.unwrap_or_default() {
@@ -97,7 +96,7 @@ pub async fn rename(
 		));
 	};
 
-	let mut tx = db.begin().await?;
+	let mut tx = db.read_write.begin().await?;
 
 	if uniqueness_check.has_old_username.unwrap_or_default() {
 		sqlx::query!(

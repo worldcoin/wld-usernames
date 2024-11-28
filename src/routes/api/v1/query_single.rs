@@ -7,12 +7,14 @@ use axum::{
 	Extension,
 };
 use axum_jsonschema::Json;
-use sqlx::PgPool;
 
-use crate::types::{ErrorResponse, MovedRecord, Name, UsernameRecord};
+use crate::{
+	config::Db,
+	types::{ErrorResponse, MovedRecord, Name, UsernameRecord},
+};
 
 pub async fn query_single(
-	Extension(db): Extension<PgPool>,
+	Extension(db): Extension<Db>,
 	Path(name_or_address): Path<String>,
 ) -> Result<Response, ErrorResponse> {
 	if let Some(name) = sqlx::query_as!(
@@ -20,7 +22,7 @@ pub async fn query_single(
 		"SELECT * FROM names WHERE username = $1 OR address = $1",
 		validate_address(&name_or_address)
 	)
-	.fetch_optional(&db)
+	.fetch_optional(&db.read_only)
 	.await?
 	{
 		return Ok(Json(UsernameRecord::from(name)).into_response());
@@ -31,7 +33,7 @@ pub async fn query_single(
 		"SELECT * FROM old_names WHERE old_username = $1",
 		name_or_address
 	)
-	.fetch_optional(&db)
+	.fetch_optional(&db.read_only)
 	.await?
 	{
 		return Ok(Redirect::permanent(&format!("/api/v1/{}", moved.new_username)).into_response());

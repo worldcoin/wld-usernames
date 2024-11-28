@@ -1,11 +1,13 @@
 use axum::Extension;
 use axum_jsonschema::Json;
-use sqlx::PgPool;
 
-use crate::types::{ErrorResponse, Name, QueryAddressesPayload, UsernameRecord};
+use crate::{
+	config::Db,
+	types::{ErrorResponse, Name, QueryAddressesPayload, UsernameRecord},
+};
 
 pub async fn query_multiple(
-	Extension(db): Extension<PgPool>,
+	Extension(db): Extension<Db>,
 	Json(payload): Json<QueryAddressesPayload>,
 ) -> Result<Json<Vec<UsernameRecord>>, ErrorResponse> {
 	let addresses = payload
@@ -19,7 +21,7 @@ pub async fn query_multiple(
 		"SELECT * FROM names WHERE address = ANY($1)",
 		&addresses
 	)
-	.fetch_all(&db)
+	.fetch_all(&db.read_only)
 	.await?;
 
 	Ok(Json(names.into_iter().map(UsernameRecord::from).collect()))

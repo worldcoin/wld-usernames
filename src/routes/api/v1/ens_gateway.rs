@@ -7,18 +7,17 @@ use axum::{body::Bytes, extract::Extension};
 use axum_jsonschema::Json;
 use chrono::{TimeDelta, Utc};
 use serde_json::from_slice;
-use sqlx::PgPool;
 use std::{str::FromStr, sync::Arc};
 
 use crate::{
-	config::{Config, ConfigExt},
+	config::{Config, ConfigExt, Db},
 	types::{ENSErrorResponse, ENSQueryPayload, ENSResponse, Method, Name, ResolveRequest},
 	utils::namehash,
 };
 
 pub async fn ens_gateway(
 	Extension(config): ConfigExt,
-	Extension(db): Extension<PgPool>,
+	Extension(db): Extension<Db>,
 	body: Bytes, // Accept the raw request body as Bytes
 ) -> Result<Json<ENSResponse>, ENSErrorResponse> {
 	// TODO: Remove these after figuring out what ENS is failing on
@@ -38,7 +37,7 @@ pub async fn ens_gateway(
 		.ok_or_else(|| ENSErrorResponse::new("Name not found."))?;
 
 	let record = sqlx::query_as!(Name, "SELECT * FROM names WHERE username = $1", username)
-		.fetch_one(&db)
+		.fetch_one(&db.read_only)
 		.await
 		.map_err(|_| ENSErrorResponse::new("Name not found."))?;
 

@@ -1,10 +1,9 @@
 use axum::{extract::Path, Extension};
 use axum_jsonschema::Json;
 use http::StatusCode;
-use sqlx::PgPool;
 
 use crate::{
-	config::ConfigExt,
+	config::{ConfigExt, Db},
 	types::{ErrorResponse, Name, UpdateUsernamePayload},
 	verify,
 };
@@ -13,11 +12,11 @@ use crate::{
 pub async fn update_record(
 	Path(username): Path<String>,
 	Extension(config): ConfigExt,
-	Extension(db): Extension<PgPool>,
+	Extension(db): Extension<Db>,
 	Json(payload): Json<UpdateUsernamePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
 	let Some(record) = sqlx::query_as!(Name, "SELECT * FROM names WHERE username = $1", username)
-		.fetch_optional(&db)
+		.fetch_optional(&db.read_write)
 		.await?
 	else {
 		return Err(ErrorResponse::not_found("Username not found".to_string()));
@@ -76,7 +75,7 @@ pub async fn update_record(
 			.map(ToString::to_string),
 		username
 	)
-	.execute(&db)
+	.execute(&db.read_write)
 	.await?;
 
 	Ok(StatusCode::OK)
