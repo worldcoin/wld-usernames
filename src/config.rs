@@ -27,7 +27,13 @@ pub struct Config {
 	pub private_key: String,
 	pub developer_portal_url: String,
 	db_client: Option<PgPool>,
+	db_read_client: Option<PgPool>,
 	blocklist: Option<Blocklist>,
+}
+#[derive(Clone)]
+pub struct Db {
+	pub read_only: PgPool,
+	pub read_write: PgPool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -58,8 +64,17 @@ impl Config {
 			)
 			.await?;
 
+		let db_read_client = PgPoolOptions::new()
+			.acquire_timeout(Duration::from_secs(3))
+			.connect(
+				&env::var("DATABASE_READ_URL")
+					.context("DATABASE_READ_URL environment variable not set")?,
+			)
+			.await?;
+
 		Ok(Self {
 			db_client: Some(db_client),
+			db_read_client: Some(db_read_client),
 			blocklist: Some(blocklist),
 			ens_domain: env::var("ENS_DOMAIN")
 				.context("ENS_DOMAIN environment variable not set")?,
@@ -79,8 +94,11 @@ impl Config {
 		sqlx::migrate!().run(self.db_client.as_ref().unwrap()).await
 	}
 
-	pub fn db_extension(&mut self) -> Extension<PgPool> {
-		Extension(self.db_client.take().unwrap())
+	pub fn db_extension(&mut self) -> Extension<Db> {
+		Extension(Db {
+			read_only: self.db_read_client.take().unwrap(),
+			read_write: self.db_client.take().unwrap(),
+		})
 	}
 
 	pub fn blocklist_extension(&mut self) -> BlocklistExt {
