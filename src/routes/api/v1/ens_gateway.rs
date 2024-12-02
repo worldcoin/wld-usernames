@@ -3,7 +3,10 @@ use alloy::{
 	signers::{local::PrivateKeySigner, Signature, Signer},
 	sol_types::{SolCall, SolValue},
 };
-use axum::{body::Bytes, extract::Extension};
+use axum::{
+	body::Bytes,
+	extract::{Extension, Path},
+};
 use axum_jsonschema::Json;
 use chrono::{TimeDelta, Utc};
 use serde_json::from_slice;
@@ -15,7 +18,7 @@ use crate::{
 	utils::namehash,
 };
 
-pub async fn ens_gateway(
+pub async fn ens_gateway_post(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<Db>,
 	body: Bytes, // Accept the raw request body as Bytes
@@ -27,6 +30,70 @@ pub async fn ens_gateway(
 			// Return an error response if JSON parsing fails
 			return Err(ENSErrorResponse::new("Failed to parse JSON payload."));
 		},
+	};
+
+	let (req_data, name, method) = decode_payload(&request_payload)
+		.map_err(|_| ENSErrorResponse::new("Failed to decode payload."))?;
+
+	let username = name
+		.strip_suffix(&format!(".{}", config.ens_domain))
+		.ok_or_else(|| ENSErrorResponse::new("Name not found."))?;
+
+	let record = sqlx::query_as!(Name, "SELECT * FROM names WHERE username = $1", username)
+		.fetch_one(&db.read_only)
+		.await
+		.map_err(|_| ENSErrorResponse::new("Name not found."))?;
+
+	let result: Vec<u8> = match method {
+		Method::Text(node, key) => {
+			if node != namehash(&name) {
+				return Err(ENSErrorResponse::new("Invalid node hash provided."));
+			}
+
+			match key.as_str() {
+				"avatar" => {
+					let Some(avatar_url) = record.profile_picture_url else {
+						return Err(ENSErrorResponse::new(&format!("Record not found: {key}")));
+					};
+
+					(avatar_url).abi_encode()
+				},
+				// Support for other might be implemented in the future.
+				_ => return Err(ENSErrorResponse::new(&format!("Record not found: {key}"))),
+			}
+		},
+		Method::Addr(node) => {
+			if node != namehash(&name) {
+				return Err(ENSErrorResponse::new("Invalid node hash provided."));
+			}
+
+			(Address::parse_checksummed(record.address, None).unwrap()).abi_encode()
+		},
+		Method::AddrMultichain | Method::Name => {
+			return Err(ENSErrorResponse::new("Not implemented."));
+		},
+		_ => ().abi_encode(),
+	};
+
+	sign_response(config, result, &req_data, request_payload.sender)
+		.await
+		.map(|data| Json(ENSResponse { data }))
+		.map_err(|_| ENSErrorResponse::new("Failed to sign response."))
+}
+
+pub async fn ens_gateway_get(
+	Extension(config): ConfigExt,
+	Extension(db): Extension<Db>,
+	Path((sender, data)): Path<(String, String)>, // Accept sender and data as route parameters
+) -> Result<Json<ENSResponse>, ENSErrorResponse> {
+	let sender_address = crate::types::Address(
+		Address::from_str(&sender).map_err(|_| ENSErrorResponse::new("Invalid sender address."))?,
+	);
+
+	// Instantiate the ENSQueryPayload object with sender and data from the path segments
+	let request_payload = ENSQueryPayload {
+		sender: sender_address,
+		data,
 	};
 
 	let (req_data, name, method) = decode_payload(&request_payload)
