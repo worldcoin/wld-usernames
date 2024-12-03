@@ -150,7 +150,12 @@ pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::Transfo
 }
 
 fn decode_payload(payload: &ENSQueryPayload) -> Result<(Vec<u8>, String, Method), anyhow::Error> {
-	let req_data = hex::decode(&payload.data[2..])?;
+	let data = if payload.data.ends_with(".json") {
+		&payload.data[2..payload.data.len() - 5]
+	} else {
+		&payload.data[2..]
+	};
+	let req_data = hex::decode(data)?;
 	let decoded_req = ResolveRequest::abi_decode(&req_data, true)?;
 
 	Ok((
