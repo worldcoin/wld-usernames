@@ -84,13 +84,12 @@ pub async fn ens_gateway_post(
 pub async fn ens_gateway_get(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<Db>,
-	Path((sender, data)): Path<(String, String)>, // Accept sender and data as route parameters
+	Path((sender, data)): Path<(String, String)>,
 ) -> Result<Json<ENSResponse>, ENSErrorResponse> {
 	let sender_address = crate::types::Address(
 		Address::from_str(&sender).map_err(|_| ENSErrorResponse::new("Invalid sender address."))?,
 	);
 
-	// Instantiate the ENSQueryPayload object with sender and data from the path segments
 	let request_payload = ENSQueryPayload {
 		sender: sender_address,
 		data,
