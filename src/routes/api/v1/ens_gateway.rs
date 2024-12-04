@@ -23,6 +23,10 @@ pub async fn ens_gateway_post(
 	Extension(db): Extension<Db>,
 	body: Bytes, // Accept the raw request body as Bytes
 ) -> Result<Json<ENSResponse>, ENSErrorResponse> {
+	tracing::info!(
+		"Received ENS Gateway POST request, body: {}",
+		String::from_utf8_lossy(&body)
+	);
 	// TODO: Remove these after figuring out what ENS is failing on
 	let request_payload: ENSQueryPayload = match from_slice(&body) {
 		Ok(payload) => payload, // Successfully parsed
@@ -39,6 +43,11 @@ pub async fn ens_gateway_get(
 	Extension(db): Extension<Db>,
 	Path((sender, data)): Path<(String, String)>,
 ) -> Result<Json<ENSResponse>, ENSErrorResponse> {
+	tracing::info!(
+		"Received ENS Gateway GET request, sender: {}, data: {}",
+		sender,
+		data
+	);
 	let sender_address = crate::types::Address(
 		Address::from_str(&sender).map_err(|_| ENSErrorResponse::new("Invalid sender address."))?,
 	);
