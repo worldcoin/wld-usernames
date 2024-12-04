@@ -30,6 +30,8 @@ pub fn handler() -> ApiRouter {
 	ApiRouter::new()
 		.api_route("/ens", post_with(ens_gateway_post, ens_gateway_docs))
 		.layer(cors.clone())
+		.api_route("/ens/", post_with(ens_gateway_post, ens_gateway_docs))
+		.layer(cors.clone())
 		.api_route(
 			"/ens/:sender/:data",
 			get_with(ens_gateway_get, ens_gateway_docs),
