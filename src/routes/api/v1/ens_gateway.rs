@@ -3,7 +3,10 @@ use alloy::{
 	signers::{local::PrivateKeySigner, Signature, Signer},
 	sol_types::{SolCall, SolValue},
 };
-use axum::{body::Bytes, extract::Extension};
+use axum::{
+	body::Bytes,
+	extract::{Extension, Path},
+};
 use axum_jsonschema::Json;
 use chrono::{TimeDelta, Utc};
 use serde_json::from_slice;
@@ -15,7 +18,7 @@ use crate::{
 	utils::namehash,
 };
 
-pub async fn ens_gateway(
+pub async fn ens_gateway_post(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<Db>,
 	body: Bytes, // Accept the raw request body as Bytes
@@ -28,7 +31,31 @@ pub async fn ens_gateway(
 			return Err(ENSErrorResponse::new("Failed to parse JSON payload."));
 		},
 	};
+	process_ens_request(config, db, request_payload).await
+}
 
+pub async fn ens_gateway_get(
+	Extension(config): ConfigExt,
+	Extension(db): Extension<Db>,
+	Path((sender, data)): Path<(String, String)>,
+) -> Result<Json<ENSResponse>, ENSErrorResponse> {
+	let sender_address = crate::types::Address(
+		Address::from_str(&sender).map_err(|_| ENSErrorResponse::new("Invalid sender address."))?,
+	);
+
+	let request_payload = ENSQueryPayload {
+		sender: sender_address,
+		data,
+	};
+
+	process_ens_request(config, db, request_payload).await
+}
+
+async fn process_ens_request(
+	config: Arc<Config>,
+	db: Db,
+	request_payload: ENSQueryPayload,
+) -> Result<Json<ENSResponse>, ENSErrorResponse> {
 	let (req_data, name, method) = decode_payload(&request_payload)
 		.map_err(|_| ENSErrorResponse::new("Failed to decode payload."))?;
 
@@ -83,7 +110,12 @@ pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::Transfo
 }
 
 fn decode_payload(payload: &ENSQueryPayload) -> Result<(Vec<u8>, String, Method), anyhow::Error> {
-	let req_data = hex::decode(&payload.data[2..])?;
+	let data = if payload.data.ends_with(".json") {
+		&payload.data[2..payload.data.len() - 5]
+	} else {
+		&payload.data[2..]
+	};
+	let req_data = hex::decode(data)?;
 	let decoded_req = ResolveRequest::abi_decode(&req_data, true)?;
 
 	Ok((

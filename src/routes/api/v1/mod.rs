@@ -11,7 +11,7 @@ mod rename;
 mod search;
 mod update_record;
 
-use ens_gateway::{docs as ens_gateway_docs, ens_gateway};
+use ens_gateway::{docs as ens_gateway_docs, ens_gateway_get, ens_gateway_post};
 use http::Method;
 use query_multiple::{docs as query_multiple_docs, query_multiple};
 use query_single::{docs as query_single_docs, query_single};
@@ -28,7 +28,12 @@ pub fn handler() -> ApiRouter {
 	.allow_headers(Any); // Allow any headers
 
 	ApiRouter::new()
-		.api_route("/ens", post_with(ens_gateway, ens_gateway_docs))
+		.api_route("/ens", post_with(ens_gateway_post, ens_gateway_docs))
+		.layer(cors.clone())
+		.api_route(
+			"/ens/:sender/:data",
+			get_with(ens_gateway_get, ens_gateway_docs),
+		)
 		.layer(cors.clone())
 		.api_route("/query", post_with(query_multiple, query_multiple_docs))
 		.layer(cors.clone())
