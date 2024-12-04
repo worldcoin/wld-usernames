@@ -31,54 +31,7 @@ pub async fn ens_gateway_post(
 			return Err(ENSErrorResponse::new("Failed to parse JSON payload."));
 		},
 	};
-
-	let (req_data, name, method) = decode_payload(&request_payload)
-		.map_err(|_| ENSErrorResponse::new("Failed to decode payload."))?;
-
-	let username = name
-		.strip_suffix(&format!(".{}", config.ens_domain))
-		.ok_or_else(|| ENSErrorResponse::new("Name not found."))?;
-
-	let record = sqlx::query_as!(Name, "SELECT * FROM names WHERE username = $1", username)
-		.fetch_one(&db.read_only)
-		.await
-		.map_err(|_| ENSErrorResponse::new("Name not found."))?;
-
-	let result: Vec<u8> = match method {
-		Method::Text(node, key) => {
-			if node != namehash(&name) {
-				return Err(ENSErrorResponse::new("Invalid node hash provided."));
-			}
-
-			match key.as_str() {
-				"avatar" => {
-					let Some(avatar_url) = record.profile_picture_url else {
-						return Err(ENSErrorResponse::new(&format!("Record not found: {key}")));
-					};
-
-					(avatar_url).abi_encode()
-				},
-				// Support for other might be implemented in the future.
-				_ => return Err(ENSErrorResponse::new(&format!("Record not found: {key}"))),
-			}
-		},
-		Method::Addr(node) => {
-			if node != namehash(&name) {
-				return Err(ENSErrorResponse::new("Invalid node hash provided."));
-			}
-
-			(Address::parse_checksummed(record.address, None).unwrap()).abi_encode()
-		},
-		Method::AddrMultichain | Method::Name => {
-			return Err(ENSErrorResponse::new("Not implemented."));
-		},
-		_ => ().abi_encode(),
-	};
-
-	sign_response(config, result, &req_data, request_payload.sender)
-		.await
-		.map(|data| Json(ENSResponse { data }))
-		.map_err(|_| ENSErrorResponse::new("Failed to sign response."))
+	process_ens_request(config, db, request_payload).await
 }
 
 pub async fn ens_gateway_get(
@@ -95,6 +48,14 @@ pub async fn ens_gateway_get(
 		data,
 	};
 
+	process_ens_request(config, db, request_payload).await
+}
+
+async fn process_ens_request(
+	config: Arc<Config>,
+	db: Db,
+	request_payload: ENSQueryPayload,
+) -> Result<Json<ENSResponse>, ENSErrorResponse> {
 	let (req_data, name, method) = decode_payload(&request_payload)
 		.map_err(|_| ENSErrorResponse::new("Failed to decode payload."))?;
 
