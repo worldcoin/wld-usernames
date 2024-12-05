@@ -83,8 +83,8 @@ async fn process_ens_request(
 					(avatar_url).abi_encode()
 				},
 				// hack to hide etherscan error
-				"email" => " ".to_string().abi_encode(),
-				"url" => " ".to_string().abi_encode(),
+				"email" => "".to_string().abi_encode(),
+				"url" => "".to_string().abi_encode(),
 
 				// Support for other might be implemented in the future.
 				_ => return Err(ENSErrorResponse::new(&format!("Record not found: {key}"))),
