@@ -45,6 +45,11 @@ sqlx = { version = "0.8.1", features = [
     "tls-rustls",
     "runtime-tokio",
 ], default-features = false }
+datadog-tracing = "0.2.1"
+opentelemetry = { version = "0.21" }
+opentelemetry_sdk = { version = "0.21" }
+tracing-opentelemetry = "0.22"
+tower-http = { version = "0.6.1", features = ["compression-br", "limit", "trace", "timeout"] }
 
 
 [build-dependencies]

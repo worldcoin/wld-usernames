@@ -3,9 +3,11 @@ use anyhow::Result;
 use axum::Extension;
 use std::{env, net::SocketAddr};
 use tokio::{net::TcpListener, signal};
+use tower_http::trace::TraceLayer;
 
 use crate::{config::Config, routes};
 
+#[tracing::instrument(skip_all)]
 pub async fn start(mut config: Config) -> Result<()> {
 	let mut openapi = OpenApi {
 		info: openapi::Info {
@@ -17,11 +19,13 @@ pub async fn start(mut config: Config) -> Result<()> {
 	};
 
 	let router = routes::handler()
-		.finish_api(&mut openapi)
-		.layer(Extension(openapi))
-		.layer(config.db_extension())
-		.layer(config.blocklist_extension())
-		.layer(config.extension());
+        .finish_api(&mut openapi)
+        .layer(Extension(openapi))
+        .layer(config.db_extension())
+        .layer(config.blocklist_extension())
+        .layer(config.extension())
+        // Add tracing middleware
+        .layer(TraceLayer::new_for_http());
 
 	let addr = SocketAddr::from((
 		[0, 0, 0, 0],
@@ -38,6 +42,7 @@ pub async fn start(mut config: Config) -> Result<()> {
 	Ok(())
 }
 
+#[tracing::instrument]
 async fn shutdown_signal() {
 	let ctrl_c = async {
 		signal::ctrl_c()
