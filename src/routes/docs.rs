@@ -10,6 +10,7 @@ pub fn handler() -> ApiRouter {
 }
 
 #[allow(clippy::unused_async)]
+#[tracing::instrument(skip_all)]
 async fn openapi_schema(Extension(openapi): Extension<OpenApi>) -> Json<OpenApi> {
 	Json(openapi)
 }

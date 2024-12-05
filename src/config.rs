@@ -2,7 +2,7 @@ use anyhow::Context;
 use axum::Extension;
 use idkit::session::AppId;
 use regex::Regex;
-use sqlx::{migrate::MigrateError, postgres::PgPoolOptions, PgPool};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{
 	env::{self, VarError},
 	num::ParseIntError,
@@ -77,9 +77,9 @@ impl Config {
 		})
 	}
 
-	pub async fn migrate_database(&self) -> Result<(), MigrateError> {
-		sqlx::migrate!().run(self.db_client.as_ref().unwrap()).await
-	}
+	// pub async fn migrate_database(&self) -> Result<(), MigrateError> {
+	// 	sqlx::migrate!().run(self.db_client.as_ref().unwrap()).await
+	// }
 
 	pub fn db_extension(&mut self) -> Extension<PgPool> {
 		Extension(self.db_client.take().unwrap())

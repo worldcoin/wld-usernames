@@ -4,6 +4,7 @@ use sqlx::PgPool;
 
 use crate::types::{ErrorResponse, Name, QueryAddressesPayload, UsernameRecord};
 
+#[tracing::instrument]
 pub async fn query_multiple(
 	Extension(db): Extension<PgPool>,
 	Json(payload): Json<QueryAddressesPayload>,

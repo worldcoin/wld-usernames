@@ -17,6 +17,7 @@ use register_username::{docs as register_username_docs, register_username};
 use rename::{docs as rename_docs, rename};
 use update_record::{docs as update_record_docs, update_record};
 
+#[tracing::instrument]
 pub fn handler() -> ApiRouter {
 	ApiRouter::new()
 		.api_route("/ens", post_with(ens_gateway, ens_gateway_docs))
