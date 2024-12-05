@@ -10,6 +10,7 @@ use crate::{
 	verify,
 };
 
+#[tracing::instrument(skip_all)]
 #[allow(dependency_on_unit_never_type_fallback)]
 pub async fn register_username(
 	Extension(config): ConfigExt,
@@ -97,6 +98,7 @@ pub async fn register_username(
 	Ok(StatusCode::CREATED)
 }
 
+#[tracing::instrument(skip_all)]
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
 	op.description("Register a World App username with World ID.")
 }

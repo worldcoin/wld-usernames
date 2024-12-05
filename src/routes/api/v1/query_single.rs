@@ -13,6 +13,7 @@ use crate::{
 	types::{ErrorResponse, MovedRecord, Name, UsernameRecord},
 };
 
+#[tracing::instrument(skip_all)]
 pub async fn query_single(
 	Extension(db): Extension<Db>,
 	Path(name_or_address): Path<String>,

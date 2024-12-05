@@ -10,6 +10,7 @@ use crate::{
 	verify,
 };
 
+#[tracing::instrument(skip_all)]
 #[allow(dependency_on_unit_never_type_fallback)]
 pub async fn rename(
 	Extension(config): ConfigExt,
