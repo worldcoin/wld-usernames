@@ -28,7 +28,6 @@ pub async fn query_multiple(
 	Ok(Json(names.into_iter().map(UsernameRecord::from).collect()))
 }
 
-#[tracing::instrument(skip_all)]
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
 	op.description("Resolve multiple addresses into their registered usernames.")
 }
