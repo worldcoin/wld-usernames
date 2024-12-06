@@ -18,7 +18,11 @@ pub async fn query_single(
 	Extension(db): Extension<Db>,
 	Path(name_or_address): Path<String>,
 ) -> Result<Response, ErrorResponse> {
-	let query_names_span = tracing::span!(tracing::Level::INFO, "query_names_table", query_type = "SELECT");
+	let query_names_span = tracing::span!(
+		tracing::Level::INFO,
+		"names_table",
+		query_type = "SELECT"
+	);
 	let _names_enter = query_names_span.enter();
 	if let Some(name) = sqlx::query_as!(
 		Name,
@@ -32,8 +36,8 @@ pub async fn query_single(
 	};
 	drop(_names_enter);
 
-	let query_moved_span = tracing::span!(tracing::Level::INFO, "query_old_names_table", query_type = "SELECT");
-	let _moved_enter = query_moved_span.enter();
+	let moved_span = tracing::span!(tracing::Level::INFO, "old_names_table", query_type = "SELECT");
+	let _moved_enter = moved_span.enter();
 	if let Some(moved) = sqlx::query_as!(
 		MovedRecord,
 		"SELECT * FROM old_names WHERE old_username = $1",

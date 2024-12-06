@@ -63,6 +63,13 @@ pub async fn register_username(
 		.ensure_valid(&payload.username)
 		.map_err(|e| ErrorResponse::validation_error(e.to_string()))?;
 
+	let uniqueness_span = tracing::span!(
+		tracing::Level::INFO,
+		"query_uniqueness_check",
+		query_type = "SELECT",
+		username = %payload.username
+	);
+	let _uniqueness_enter = uniqueness_span.enter();
 	let uniqueness_check = sqlx::query!(
             "SELECT
                 EXISTS(SELECT 1 FROM names WHERE nullifier_hash = $2) AS world_id,
@@ -72,6 +79,7 @@ pub async fn register_username(
         )
         .fetch_one(&db.read_write)
         .await?;
+	drop(_uniqueness_enter);
 
 	if uniqueness_check.username.unwrap_or_default() {
 		return Err(ErrorResponse::validation_error(
@@ -85,6 +93,14 @@ pub async fn register_username(
 		));
 	}
 
+	let insert_span = tracing::span!(
+		parent: None,
+		tracing::Level::INFO,
+		"insert_new_name",
+		query_type = "INSERT",
+		username = %payload.username
+	);
+	let _insert_enter = insert_span.enter();
 	Name::new(
 		payload.username,
 		&payload.address,
@@ -94,11 +110,11 @@ pub async fn register_username(
 	)
 	.insert(&db.read_write, "names")
 	.await?;
+	drop(_insert_enter);
 
 	Ok(StatusCode::CREATED)
 }
 
-#[tracing::instrument(skip_all)]
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
 	op.description("Register a World App username with World ID.")
 }
