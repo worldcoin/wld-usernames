@@ -6,6 +6,7 @@ use crate::{
 	types::{ErrorResponse, Name, QueryAddressesPayload, UsernameRecord},
 };
 
+#[tracing::instrument(skip_all)]
 pub async fn query_multiple(
 	Extension(db): Extension<Db>,
 	Json(payload): Json<QueryAddressesPayload>,
