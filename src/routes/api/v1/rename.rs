@@ -10,6 +10,13 @@ use crate::{
 	verify,
 };
 
+#[tracing::instrument(
+	skip(config, db, blocklist),
+	fields(
+		old_username = %payload.old_username,
+		new_username = %payload.new_username
+	)
+)]
 #[allow(dependency_on_unit_never_type_fallback)]
 pub async fn rename(
 	Extension(config): ConfigExt,
@@ -17,6 +24,15 @@ pub async fn rename(
 	Extension(blocklist): BlocklistExt,
 	Json(payload): Json<RenamePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
+	// Add span for initial record lookup
+	let lookup_span = tracing::span!(
+		parent: None,
+		tracing::Level::INFO,
+		"query_initial_lookup",
+		query_type = "SELECT",
+		username = %payload.old_username
+	);
+	let _lookup_enter = lookup_span.enter();
 	let Some(record) = sqlx::query_as!(
 		Name,
 		"SELECT * FROM names WHERE username = $1",
@@ -27,6 +43,7 @@ pub async fn rename(
 	else {
 		return Err(ErrorResponse::not_found("Username not found".to_string()));
 	};
+	drop(_lookup_enter);
 
 	if record.nullifier_hash != payload.nullifier_hash {
 		return Err(ErrorResponse::unauthorized(
@@ -79,6 +96,15 @@ pub async fn rename(
 		.ensure_valid(&payload.new_username)
 		.map_err(|e| ErrorResponse::validation_error(e.to_string()))?;
 
+	let uniqueness_span = tracing::span!(
+		parent: None,
+		tracing::Level::INFO,
+		"query_uniqueness_check",
+		query_type = "SELECT",
+		old_username = %payload.old_username,
+		new_username = %payload.new_username
+	);
+	let _uniqueness_enter = uniqueness_span.enter();
 	let uniqueness_check = sqlx::query!(
 		"SELECT
             EXISTS(SELECT 1 FROM old_names where new_username = $1) AS has_old_username,
@@ -89,6 +115,7 @@ pub async fn rename(
 	)
 	.fetch_one(&db.read_write)
 	.await?;
+	drop(_uniqueness_enter);
 
 	if uniqueness_check.username.unwrap_or_default() {
 		return Err(ErrorResponse::validation_error(
@@ -96,6 +123,15 @@ pub async fn rename(
 		));
 	};
 
+	let transaction_span = tracing::span!(
+		parent: None,
+		tracing::Level::INFO,
+		"rename_transaction",
+		query_type = "TRANSACTION",
+		old_username = %payload.old_username,
+		new_username = %payload.new_username
+	);
+	let _transaction_enter = transaction_span.enter();
 	let mut tx = db.read_write.begin().await?;
 
 	if uniqueness_check.has_old_username.unwrap_or_default() {
@@ -124,6 +160,7 @@ pub async fn rename(
 	.await?;
 
 	tx.commit().await?;
+	drop(_transaction_enter);
 
 	Ok(StatusCode::OK)
 }
