@@ -1,15 +1,58 @@
 use aide::openapi::{self, OpenApi};
 use anyhow::Result;
-use axum::Extension;
-use std::{env, net::SocketAddr};
+use axum::{body::Body, http::Request, middleware::Next, response::Response, Extension};
+use http::Method;
+use http_body_util::{BodyExt, Collected};
+use std::{env, net::SocketAddr, time::Duration};
 use tokio::{net::TcpListener, signal};
-use tower_http::trace::TraceLayer;
-use uuid::Uuid;
+use tower_http::{
+	compression::CompressionLayer,
+	timeout::TimeoutLayer,
+	trace::{DefaultMakeSpan, TraceLayer},
+};
+use tracing::Span;
 
 use crate::{config::Config, routes};
 
+#[must_use]
+pub fn get_timeout_layer(timeout: Option<u64>) -> TimeoutLayer {
+	let timeout = timeout.map_or(Duration::from_secs(20), Duration::from_secs);
+	TimeoutLayer::new(timeout)
+}
+
+/// Adds the request method to the response extensions so that it can be used in the trace layer.
+async fn record_request_method(req: axum::extract::Request, next: Next) -> Response {
+	let method = req.method().clone();
+	let path = req.uri().path().to_string();
+	let mut response = next.run(req).await;
+	response.extensions_mut().insert((method, path));
+	response
+}
+
+async fn record_bad_request(req: axum::extract::Request, next: Next) -> Response {
+	let path = req.uri().path().to_string();
+	let response = next.run(req).await;
+
+	let (response_parts, response_body) = response.into_parts();
+	let bytes = response_body
+		.collect()
+		.await
+		.unwrap_or_else(|_| Collected::default())
+		.to_bytes();
+	let status = response_parts.status.as_u16();
+	if status != 200 && status != 404 {
+		let body_str = std::str::from_utf8(&bytes).unwrap_or_default();
+		tracing::debug!(
+			http.route = ?path,
+			http.status_code = status,
+			response_body = body_str,
+			"👾 returning non-200 response"
+		);
+	}
+	Response::from_parts(response_parts, Body::from(bytes))
+}
+
 pub async fn start(mut config: Config) -> Result<()> {
-	// Create OpenAPI info
 	let mut openapi = OpenApi {
 		info: openapi::Info {
 			title: "World App Username API".to_string(),
@@ -19,49 +62,61 @@ pub async fn start(mut config: Config) -> Result<()> {
 		..OpenApi::default()
 	};
 
-	// Define the router with the necessary layers
 	let router = routes::handler()
 		.finish_api(&mut openapi)
 		.layer(Extension(openapi))
 		.layer(config.db_extension())
 		.layer(config.blocklist_extension())
 		.layer(config.extension())
+		.layer(CompressionLayer::new())
+		.layer(axum::middleware::from_fn(record_bad_request))
+		.layer(axum::middleware::from_fn(record_request_method))
 		.layer(
 			TraceLayer::new_for_http()
-				.on_request(|request: &http::Request<_>, _span: &tracing::Span| {
-					tracing::info!(method = %request.method(), uri = %request.uri(), "received request");
+				.make_span_with(DefaultMakeSpan::new().include_headers(true))
+				.on_request(|request: &Request<_>, _span: &Span| {
+					if request.method() != Method::GET {
+						tracing::debug!(
+							content_length_header = request.headers().get("content-length").map(|v| v.to_str().unwrap_or_default()),
+							path = request.uri().path(),
+							"📥 received request: {} {}",
+							request.method(),
+							request.uri().path()
+						);
+					}
 				})
-				.on_response(
-					|response: &http::Response<_>,
-					 latency: std::time::Duration,
-					 _span: &tracing::Span| {
-						tracing::info!(status = response.status().as_u16(), latency = ?latency, "response sent");
-					},
-				)
-				.make_span_with(|request: &http::Request<_>| {
-					let trace_id = Uuid::new_v4().to_string();
+				.on_response(|response: &Response, latency: Duration, _span: &Span| {
+					let ext = response.extensions().get::<(Method, String)>();
+					let status = response.status().as_u16();
 
-					// println!("	: {}", trace_id);
-
-					tracing::info!("Extracted trace_id: {}", trace_id);
-
-					tracing::info_span!(
-						"http_request",
-						method = %request.method(),
-						uri = %request.uri(),
-						trace_id = %trace_id
-					)
+					if let Some((method, path)) = ext {
+						if method != Method::GET {
+							tracing::debug!(
+								http.route = ?path,
+								http.status_code = status,
+								http.method = method.to_string(),
+								latency = ?latency,
+								response_headers = ?response.headers(),
+								"🔚 finished processing {} request in {} ms ({})",
+								method,
+								latency.as_millis(),
+								status,
+							);
+						}
+					}
 				}),
-		);
+		)
+		.layer(get_timeout_layer(None));
 
-	// Server setup and binding
+	tracing::info!("✅ preflight done. all services initialized...");
+
 	let addr = SocketAddr::from((
 		[0, 0, 0, 0],
 		env::var("PORT").map_or(Ok(8000), |p| p.parse())?,
 	));
 	let listener = TcpListener::bind(&addr).await?;
 
-	tracing::info!("Starting server on {addr}...");
+	tracing::info!("🚀 started server on {addr}...");
 
 	axum::serve(listener, router.into_make_service())
 		.with_graceful_shutdown(shutdown_signal())
@@ -75,6 +130,7 @@ async fn shutdown_signal() {
 		signal::ctrl_c()
 			.await
 			.expect("failed to install Ctrl+C handler");
+		tracing::warn!("⚠️ received termination signal...");
 	};
 
 	#[cfg(unix)]
@@ -83,6 +139,7 @@ async fn shutdown_signal() {
 			.expect("failed to install signal handler")
 			.recv()
 			.await;
+		tracing::warn!("⚠️ received termination signal...");
 	};
 
 	#[cfg(not(unix))]
