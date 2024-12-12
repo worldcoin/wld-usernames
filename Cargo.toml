@@ -25,11 +25,15 @@ tokio = { version = "1.41.0", features = ["full"] }
 chrono = { version = "0.4.38", features = ["serde"] }
 reqwest = { version = "0.12.8", features = ["json"] }
 serde = { version = "1.0.213", features = ["derive"] }
-tower-http = { version = "0.6.1", features = ["cors"] }
+tower-http = { version = "0.6.1", features = [
+    "trace",
+    "timeout",
+    "cors"
+] }
 axum-jsonschema = { version = "0.8.0", features = ["aide"] }
 schemars = { version = "0.8.21", features = ["chrono", "url"] }
 aide = { version = "0.13.4", features = ["axum", "macros", "scalar"] }
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
+tracing-subscriber = "0.3.19"
 ruint = { version = "1.12.3", default-features = false, features = [
     "num-traits",
 ] }
@@ -49,6 +53,8 @@ sqlx = { version = "0.8.2", features = [
     "tls-rustls",
     "runtime-tokio",
 ], default-features = false }
+tracing-opentelemetry = "0.17.4"
+telemetry-batteries = { git = "https://github.com/worldcoin/telemetry-batteries", rev = "901ea26" }
 
 
 [build-dependencies]

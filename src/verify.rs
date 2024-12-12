@@ -39,6 +39,7 @@ struct VerificationRequest {
 /// # Errors
 ///
 /// Errors if the proof is invalid (`Error::Verification`), or if there's an error validating the proof.
+#[tracing::instrument(skip(proof, signal, developer_portal_url))]
 pub async fn dev_portal_verify_proof<V: alloy::sol_types::SolValue + Send>(
 	proof: Proof,
 	app_id: String,

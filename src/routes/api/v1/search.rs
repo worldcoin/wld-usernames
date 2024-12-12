@@ -9,6 +9,7 @@ use axum::{
 };
 use axum_jsonschema::Json;
 
+#[tracing::instrument(skip_all)]
 pub async fn search(
 	Extension(db): Extension<Db>,
 	Path(username): Path<String>,
@@ -39,6 +40,7 @@ pub async fn search(
 	.into_response());
 }
 
+#[tracing::instrument(skip_all)]
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
 	op.description("Search for up to 10 usernames. Accepts 1 to 14, only valid username characters to search with.")
 		.response::<200, Json<Vec<UsernameRecord>>>()

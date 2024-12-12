@@ -13,10 +13,17 @@ use crate::{
 	types::{ErrorResponse, MovedRecord, Name, UsernameRecord},
 };
 
+#[tracing::instrument(skip(db))]
 pub async fn query_single(
 	Extension(db): Extension<Db>,
 	Path(name_or_address): Path<String>,
 ) -> Result<Response, ErrorResponse> {
+	let query_names_span = tracing::span!(
+		tracing::Level::INFO,
+		"names_table",
+		query_type = "SELECT"
+	);
+	let _names_enter = query_names_span.enter();
 	if let Some(name) = sqlx::query_as!(
 		Name,
 		"SELECT * FROM names WHERE username = $1 OR address = $1",
@@ -27,7 +34,10 @@ pub async fn query_single(
 	{
 		return Ok(Json(UsernameRecord::from(name)).into_response());
 	};
+	drop(_names_enter);
 
+	let moved_span = tracing::span!(tracing::Level::INFO, "old_names_table", query_type = "SELECT");
+	let _moved_enter = moved_span.enter();
 	if let Some(moved) = sqlx::query_as!(
 		MovedRecord,
 		"SELECT * FROM old_names WHERE old_username = $1",
@@ -38,6 +48,7 @@ pub async fn query_single(
 	{
 		return Ok(Redirect::permanent(&format!("/api/v1/{}", moved.new_username)).into_response());
 	}
+	drop(_moved_enter);
 
 	Err(ErrorResponse::not_found("Record not found.".to_string()))
 }
