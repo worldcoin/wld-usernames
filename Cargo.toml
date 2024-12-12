@@ -26,7 +26,6 @@ chrono = { version = "0.4.38", features = ["serde"] }
 reqwest = { version = "0.12.8", features = ["json"] }
 serde = { version = "1.0.213", features = ["derive"] }
 tower-http = { version = "0.6.1", features = [
-    "compression-br",
     "trace",
     "timeout",
     "cors"
@@ -55,9 +54,7 @@ sqlx = { version = "0.8.2", features = [
     "runtime-tokio",
 ], default-features = false }
 tracing-opentelemetry = "0.17.4"
-uuid = "1.11.0"
 telemetry-batteries = { git = "https://github.com/worldcoin/telemetry-batteries", rev = "901ea26" }
-http-body-util = "0.1.0"
 
 
 [build-dependencies]
