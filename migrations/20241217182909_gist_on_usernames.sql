@@ -1,0 +1,1 @@
+CREATE INDEX names_username_idx IF NOT EXISTS ON names USING GIST (username gist_trgm_ops(siglen=32));

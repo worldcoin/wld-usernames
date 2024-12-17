@@ -23,7 +23,7 @@ pub async fn search(
 		Name,
 		"SELECT * FROM names
 			WHERE username % $1
-			ORDER BY similarity(username, $1) DESC
+			ORDER BY username <-> $1
 			LIMIT 10;",
 		lowercase_username
 	)
