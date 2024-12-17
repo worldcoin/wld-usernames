@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM names\n\t\t\tWHERE username % $1\n\t\t\tORDER BY similarity(username, $1) DESC\n\t\t\tLIMIT 10;",
+  "query": "SELECT * FROM names\n\t\t\tWHERE username % $1\n\t\t\tORDER BY username <-> $1\n\t\t\tLIMIT 10;",
   "describe": {
     "columns": [
       {
@@ -54,5 +54,5 @@
       true
     ]
   },
-  "hash": "d3301497a1f07f9ba0876547039b6d64b1d0ad1b6e69e3b0c49bddd462bf061d"
+  "hash": "7a3ffd63b2bb0d49bebf4909c289493860aeb5299a9056997b4eaf8d95977d73"
 }
