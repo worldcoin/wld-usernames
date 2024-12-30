@@ -10,6 +10,7 @@ use crate::{
 	verify,
 };
 
+#[allow(clippy::too_many_lines)] // TODO: refactor
 #[allow(dependency_on_unit_never_type_fallback)]
 pub async fn rename(
 	Extension(config): ConfigExt,
@@ -81,8 +82,11 @@ pub async fn rename(
 
 	let uniqueness_check = sqlx::query!(
 		"SELECT
-            EXISTS(SELECT 1 FROM old_names where new_username = $1) AS has_old_username,
-            EXISTS(SELECT 1 FROM names WHERE username = $2 UNION SELECT 1 FROM old_names where old_username = $2 AND new_username != $1) AS username
+            EXISTS(SELECT 1 FROM old_names where LOWER(new_username) = LOWER($1)) AS has_old_username,
+            EXISTS(SELECT 1 FROM names WHERE LOWER(username) = LOWER($2) 
+                UNION 
+                SELECT 1 FROM old_names where LOWER(old_username) = LOWER($2) AND LOWER(new_username) != LOWER($1)
+            ) AS username
         ",
 		&payload.old_username,
 		&payload.new_username,
