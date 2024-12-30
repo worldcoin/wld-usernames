@@ -63,9 +63,9 @@ pub async fn register_username(
 		.map_err(|e| ErrorResponse::validation_error(e.to_string()))?;
 
 	let uniqueness_check = sqlx::query!(
-			"SELECT
-				EXISTS(SELECT 1 FROM names WHERE nullifier_hash = $2) AS world_id,
-				EXISTS(SELECT 1 FROM names WHERE LOWER(username) = LOWER($1) UNION SELECT 1 FROM old_names where LOWER(old_username) = LOWER($1)) AS username",
+		"SELECT
+			EXISTS(SELECT 1 FROM names WHERE nullifier_hash = $2) AS world_id,
+			EXISTS(SELECT 1 FROM names WHERE LOWER(username) = LOWER($1) UNION SELECT 1 FROM old_names where LOWER(old_username) = LOWER($1)) AS username",
 			&payload.username,
 			&payload.nullifier_hash
 		)
