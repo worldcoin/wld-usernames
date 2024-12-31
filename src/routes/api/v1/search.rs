@@ -22,21 +22,22 @@ pub async fn search(
 	let names = sqlx::query_as!(
 		Name,
 		"SELECT * FROM names
-			WHERE username % $1
-			ORDER BY username <-> $1
-			LIMIT 10;",
+		WHERE username % $1 
+		AND similarity(username, $1) > 0.4
+		ORDER BY username <-> $1
+		LIMIT 10;",
 		lowercase_username
 	)
 	.fetch_all(&db.read_only)
 	.await?;
 
-	return Ok(Json(
+	Ok(Json(
 		names
 			.into_iter()
 			.map(UsernameRecord::from)
 			.collect::<Vec<UsernameRecord>>(),
 	)
-	.into_response());
+	.into_response())
 }
 
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
