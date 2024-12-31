@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                EXISTS(SELECT 1 FROM names WHERE nullifier_hash = $2) AS world_id,\n                EXISTS(SELECT 1 FROM names WHERE username = $1 UNION SELECT 1 FROM old_names where old_username = $1) AS username",
+  "query": "SELECT\n\t\t\tEXISTS(SELECT 1 FROM names WHERE nullifier_hash = $2) AS world_id,\n\t\t\tEXISTS(SELECT 1 FROM names WHERE LOWER(username) = LOWER($1) UNION SELECT 1 FROM old_names where LOWER(old_username) = LOWER($1)) AS username",
   "describe": {
     "columns": [
       {
@@ -25,5 +25,5 @@
       null
     ]
   },
-  "hash": "47830372409878532604af16d51e5151a002bd02ec6d828cf9284309ef4a5ce3"
+  "hash": "9203398b084f31d1a78317d0da3a7ef529016262f386466c0979e695f27eb731"
 }

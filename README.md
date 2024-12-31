@@ -5,7 +5,6 @@ This is our open source implementation of ENS compatible Usernames
 ```
 cp .env.example .env
 docker compose up --detach
-sqlx migrate run
 
 cargo run
 
