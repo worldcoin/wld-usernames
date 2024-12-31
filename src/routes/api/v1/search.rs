@@ -23,7 +23,6 @@ pub async fn search(
 		Name,
 		"SELECT * FROM names
 		WHERE username % $1 
-		AND similarity(username, $1) > 0.4
 		ORDER BY username <-> $1
 		LIMIT 10;",
 		lowercase_username
