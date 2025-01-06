@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT \n            username as \"username!\",\n            address as \"address!\",\n            profile_picture_url,\n            nullifier_hash as \"nullifier_hash!\",\n            verification_level as \"verification_level!\",\n            created_at as \"created_at!\",\n            updated_at as \"updated_at!\"\n        FROM names \n        WHERE username = $1 \n        UNION ALL \n        SELECT \n            username as \"username!\",\n            address as \"address!\",\n            profile_picture_url,\n            nullifier_hash as \"nullifier_hash!\",\n            verification_level as \"verification_level!\",\n            created_at as \"created_at!\",\n            updated_at as \"updated_at!\"\n        FROM names \n        WHERE address = $1 AND username <> $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "address!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "profile_picture_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "nullifier_hash!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "verification_level!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at!",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 6,
+        "name": "updated_at!",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "1156b9315b2c5d5d27fd24ada333ad2483172651783ab78d5f584584935c3c45"
+}
