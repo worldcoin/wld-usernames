@@ -60,6 +60,7 @@ impl Config {
 		);
 
 		let db_client = PgPoolOptions::new()
+			.max_connections(100)
 			.acquire_timeout(Duration::from_secs(3))
 			.connect(
 				&env::var("DATABASE_URL").context("DATABASE_URL environment variable not set")?,
@@ -67,7 +68,6 @@ impl Config {
 			.await?;
 
 		let db_read_client = PgPoolOptions::new()
-			.max_connections(100)
 			.acquire_timeout(Duration::from_secs(3))
 			.connect(
 				&env::var("DATABASE_READ_URL")
