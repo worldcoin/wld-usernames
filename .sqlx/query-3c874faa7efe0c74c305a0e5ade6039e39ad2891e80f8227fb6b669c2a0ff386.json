@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT \n            username as \"username!\",\n            address as \"address!\",\n            profile_picture_url,\n            nullifier_hash as \"nullifier_hash!\",\n            verification_level as \"verification_level!\",\n            created_at as \"created_at!\",\n            updated_at as \"updated_at!\"\n        FROM names \n        WHERE username = $1 \n        UNION ALL \n        SELECT \n            username as \"username!\",\n            address as \"address!\",\n            profile_picture_url,\n            nullifier_hash as \"nullifier_hash!\",\n            verification_level as \"verification_level!\",\n            created_at as \"created_at!\",\n            updated_at as \"updated_at!\"\n        FROM names \n        WHERE address = $1 AND username <> $1\n        ",
+  "query": "\n        SELECT \n            username as \"username!\",\n            address as \"address!\",\n            profile_picture_url,\n            nullifier_hash as \"nullifier_hash!\",\n            verification_level as \"verification_level!\",\n            created_at as \"created_at!\",\n            updated_at as \"updated_at!\"\n        FROM names \n        WHERE username = $1 \n        UNION ALL \n        SELECT \n            username as \"username!\",\n            address as \"address!\",\n            profile_picture_url,\n            nullifier_hash as \"nullifier_hash!\",\n            verification_level as \"verification_level!\",\n            created_at as \"created_at!\",\n            updated_at as \"updated_at!\"\n        FROM names \n        WHERE address = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -54,5 +54,5 @@
       null
     ]
   },
-  "hash": "1156b9315b2c5d5d27fd24ada333ad2483172651783ab78d5f584584935c3c45"
+  "hash": "3c874faa7efe0c74c305a0e5ade6039e39ad2891e80f8227fb6b669c2a0ff386"
 }

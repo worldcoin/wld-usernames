@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use super::{Address, Name};
+use super::{Address, Name, NameSearch};
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, OperationIo)]
 pub struct ENSResponse {
@@ -26,6 +26,16 @@ pub struct UsernameRecord {
 #[allow(clippy::fallible_impl_from)]
 impl From<Name> for UsernameRecord {
 	fn from(value: Name) -> Self {
+		Self {
+			username: value.username,
+			address: Address(value.address.parse().unwrap()),
+			profile_picture_url: value.profile_picture_url.map(|url| url.parse().unwrap()),
+		}
+	}
+}
+
+impl From<NameSearch> for UsernameRecord {
+	fn from(value: NameSearch) -> Self {
 		Self {
 			username: value.username,
 			address: Address(value.address.parse().unwrap()),
