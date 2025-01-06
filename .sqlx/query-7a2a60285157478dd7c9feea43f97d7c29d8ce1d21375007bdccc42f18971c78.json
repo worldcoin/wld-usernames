@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM names WHERE username = $1 OR address = $1",
+  "query": "SELECT * FROM names\n\t\tWHERE username % $1 \n\t\tORDER BY username <-> $1\n\t\tLIMIT 10;",
   "describe": {
     "columns": [
       {
@@ -54,5 +54,5 @@
       true
     ]
   },
-  "hash": "6987de3c86a14514eb8a59e8217d0187ab487651de457ca655dbfd85578cdd99"
+  "hash": "7a2a60285157478dd7c9feea43f97d7c29d8ce1d21375007bdccc42f18971c78"
 }

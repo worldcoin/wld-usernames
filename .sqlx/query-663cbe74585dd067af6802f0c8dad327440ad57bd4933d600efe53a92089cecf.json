@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM names\n\t\tWHERE username % $1 \n\t\tAND similarity(username, $1) > 0.4\n\t\tORDER BY username <-> $1\n\t\tLIMIT 10;",
+  "query": "SELECT * FROM names WHERE username = $1 UNION ALL SELECT * FROM names WHERE address = $1 AND username <> $1",
   "describe": {
     "columns": [
       {
@@ -45,14 +45,14 @@
       ]
     },
     "nullable": [
-      false,
-      false,
-      false,
-      false,
-      false,
-      false,
-      true
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
     ]
   },
-  "hash": "2d645ac54be263c577107c50eb134fdeff39cff96d1779fa016242fb9f41ad49"
+  "hash": "663cbe74585dd067af6802f0c8dad327440ad57bd4933d600efe53a92089cecf"
 }
