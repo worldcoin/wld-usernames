@@ -19,7 +19,29 @@ pub async fn query_single(
 ) -> Result<Response, ErrorResponse> {
 	if let Some(name) = sqlx::query_as!(
 		Name,
-		"SELECT * FROM names WHERE username = $1 UNION ALL SELECT * FROM names WHERE address = $1 AND username <> $1",
+		r#"
+        SELECT 
+            username as "username!",
+            address as "address!",
+            profile_picture_url,
+            nullifier_hash as "nullifier_hash!",
+            verification_level as "verification_level!",
+            created_at as "created_at!",
+            updated_at as "updated_at!"
+        FROM names 
+        WHERE username = $1 
+        UNION ALL 
+        SELECT 
+            username as "username!",
+            address as "address!",
+            profile_picture_url,
+            nullifier_hash as "nullifier_hash!",
+            verification_level as "verification_level!",
+            created_at as "created_at!",
+            updated_at as "updated_at!"
+        FROM names 
+        WHERE address = $1 AND username <> $1
+        "#,
 		validate_address(&name_or_address)
 	)
 	.fetch_optional(&db.read_only)

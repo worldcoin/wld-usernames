@@ -7,7 +7,7 @@ use url::Url;
 /// A registered username.
 #[derive(Debug, FromRow, PgInsert)]
 pub struct Name {
-	/// Checksummed address of the owner.
+	/// Check-summed address of the owner.
 	pub address: String,
 	/// World App username of the owner.
 	pub username: String,
@@ -15,7 +15,7 @@ pub struct Name {
 	pub profile_picture_url: Option<String>,
 	/// The nullifier hash of the proof that was used to register this name.
 	pub nullifier_hash: String,
-	/// The verificaiton level of the proof that was used to register this name.
+	/// The verification level of the proof that was used to register this name.
 	pub verification_level: String,
 	/// The time at which this name was registered.
 	pub created_at: chrono::NaiveDateTime,
