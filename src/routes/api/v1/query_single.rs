@@ -19,7 +19,7 @@ pub async fn query_single(
 ) -> Result<Response, ErrorResponse> {
 	if let Some(name) = sqlx::query_as!(
 		Name,
-		"SELECT * FROM names WHERE username = $1 OR address = $1",
+		"SELECT * FROM names WHERE username = $1 UNION ALL SELECT * FROM names WHERE address = $1 AND username <> $1",
 		validate_address(&name_or_address)
 	)
 	.fetch_optional(&db.read_only)
