@@ -34,6 +34,7 @@ impl From<Name> for UsernameRecord {
 	}
 }
 
+#[allow(clippy::fallible_impl_from)]
 impl From<NameSearch> for UsernameRecord {
 	fn from(value: NameSearch) -> Self {
 		Self {

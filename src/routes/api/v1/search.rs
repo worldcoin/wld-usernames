@@ -21,8 +21,11 @@ pub async fn search(
 
 	let names = sqlx::query_as!(
 		NameSearch,
-		"SELECT username, address, profile_picture_url FROM names
-		WHERE username % $1 
+		"SELECT username,
+			address,
+			profile_picture_url
+		FROM names
+		WHERE username % $1
 		ORDER BY username <-> $1
 		LIMIT 10;",
 		lowercase_username
