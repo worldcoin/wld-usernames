@@ -49,3 +49,9 @@ pub struct MovedRecord {
 	pub old_username: String,
 	pub new_username: String,
 }
+#[derive(Debug, sqlx::FromRow)] // Add other derives as needed like Debug, Clone, etc.
+pub struct NameSearch {
+	pub username: String,
+	pub address: String,
+	pub profile_picture_url: Option<String>,
+}

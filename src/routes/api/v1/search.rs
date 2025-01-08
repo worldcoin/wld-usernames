@@ -1,6 +1,6 @@
 use crate::{
 	config::{Db, USERNAME_SEARCH_REGEX},
-	types::{ErrorResponse, Name, UsernameRecord},
+	types::{ErrorResponse, NameSearch, UsernameRecord},
 };
 use axum::{
 	extract::Path,
@@ -20,9 +20,12 @@ pub async fn search(
 	}
 
 	let names = sqlx::query_as!(
-		Name,
-		"SELECT * FROM names
-		WHERE username % $1 
+		NameSearch,
+		"SELECT username,
+			address,
+			profile_picture_url
+		FROM names
+		WHERE username % $1
 		ORDER BY username <-> $1
 		LIMIT 10;",
 		lowercase_username
