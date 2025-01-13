@@ -1,6 +1,7 @@
 use anyhow::Context;
 use axum::Extension;
 use idkit::session::AppId;
+use redis::Client;
 use regex::Regex;
 use sqlx::{migrate::MigrateError, postgres::PgPoolOptions, PgPool};
 use std::{
@@ -20,7 +21,7 @@ pub static USERNAME_REGEX: LazyLock<Regex> =
 pub static DEVICE_USERNAME_REGEX: LazyLock<Regex> =
 	LazyLock::new(|| Regex::new(r"^[a-z]\w{2,13}[a-z0-9]\.\d{4}$").unwrap());
 pub static USERNAME_SEARCH_REGEX: LazyLock<Regex> =
-	LazyLock::new(|| Regex::new(r"^[a-z]\w{0,13}[a-z0-9]$").unwrap());
+	LazyLock::new(|| Regex::new(r"^[a-z]\w{0,13}([a-z0-9](\.\d{4})?)$").unwrap());
 
 #[derive(Debug)]
 pub struct Config {
@@ -30,12 +31,18 @@ pub struct Config {
 	pub developer_portal_url: String,
 	db_client: Option<PgPool>,
 	db_read_client: Option<PgPool>,
+	redis_client: Option<Client>,
 	blocklist: Option<Blocklist>,
 }
 #[derive(Clone)]
 pub struct Db {
 	pub read_only: PgPool,
 	pub read_write: PgPool,
+}
+
+#[derive(Clone)]
+pub struct RedisClient {
+	pub client: Client,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -48,6 +55,8 @@ pub enum Error {
 	ChainId(#[from] ParseIntError),
 	#[error(transparent)]
 	EnvWithContext(#[from] anyhow::Error),
+	#[error(transparent)]
+	Redis(#[from] redis::RedisError),
 }
 
 impl Config {
@@ -75,6 +84,9 @@ impl Config {
 			)
 			.await?;
 
+		let redis_url = env::var("REDIS_URL").context("REDIS_URL environment variable not set")?;
+		let redis_client = Client::open(redis_url)?;
+
 		Ok(Self {
 			db_client: Some(db_client),
 			db_read_client: Some(db_read_client),
@@ -90,6 +102,7 @@ impl Config {
 			},
 			developer_portal_url: env::var("DEVELOPER_PORTAL_ENDPOINT")
 				.context("DEVELOPER_PORTAL_ENDPOINT environment variable not set")?,
+			redis_client: Some(redis_client),
 		})
 	}
 
@@ -101,6 +114,12 @@ impl Config {
 		Extension(Db {
 			read_only: self.db_read_client.take().unwrap(),
 			read_write: self.db_client.take().unwrap(),
+		})
+	}
+
+	pub fn redis_extension(&mut self) -> Extension<RedisClient> {
+		Extension(RedisClient {
+			client: self.redis_client.take().unwrap(),
 		})
 	}
 
