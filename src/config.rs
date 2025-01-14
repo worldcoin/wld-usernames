@@ -21,7 +21,7 @@ pub static USERNAME_REGEX: LazyLock<Regex> =
 pub static DEVICE_USERNAME_REGEX: LazyLock<Regex> =
 	LazyLock::new(|| Regex::new(r"^[a-z]\w{2,13}[a-z0-9]\.\d{4}$").unwrap());
 pub static USERNAME_SEARCH_REGEX: LazyLock<Regex> =
-	LazyLock::new(|| Regex::new(r"^[a-z]\w{0,13}([a-z0-9](\.\d{4})?)$").unwrap());
+	LazyLock::new(|| Regex::new(r"^[a-z]\w{0,13}([a-z0-9](\.\d{1,4})?)$").unwrap());
 
 #[derive(Debug)]
 pub struct Config {
