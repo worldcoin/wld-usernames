@@ -23,7 +23,10 @@ pub async fn search(
 		return Ok(Json(Vec::<UsernameRecord>::new()).into_response());
 	}
 
-	let mut conn = redis.client.get_async_connection().await?;
+	let mut conn = redis.client.get_async_connection().await.map_err(|e| {
+		tracing::error!("Redis connection error: {}", e);
+		e
+	})?;
 	let cache_key = format!("search:{lowercase_username}");
 
 	if let Ok(cached_data) = conn.get::<_, String>(&cache_key).await {

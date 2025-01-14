@@ -36,8 +36,10 @@ pub async fn query_multiple(
 
 	let records_json: Vec<UsernameRecord> = names.into_iter().map(UsernameRecord::from).collect();
 	let cache_key = format!("query_multiple:{:?}", addresses.join(";"));
-	let mut conn = redis.client.get_async_connection().await?;
-
+	let mut conn = redis.client.get_async_connection().await.map_err(|e| {
+		tracing::error!("Redis connection error: {}", e);
+		e
+	})?;
 	if let Ok(json_data) = serde_json::to_string(&records_json) {
 		let _: Result<(), redis::RedisError> = conn
 			.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 5)
