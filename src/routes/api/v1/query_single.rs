@@ -8,27 +8,26 @@ use axum::{
 };
 use axum_jsonschema::Json;
 
+use crate::utils::ONE_MINUTE_IN_SECONDS;
 use crate::{
-	config::Db,
+	config::{Db, DebugClusterClient},
 	types::{ErrorResponse, MovedRecord, Name, UsernameRecord},
 };
-use crate::{config::RedisClient, utils::ONE_MINUTE_IN_SECONDS};
-use redis::AsyncCommands;
+use redis::{Commands, RedisResult};
 
 pub async fn query_single(
 	Extension(db): Extension<Db>,
-	Extension(redis): Extension<RedisClient>,
+	Extension(redis): Extension<DebugClusterClient>,
 	Path(name_or_address): Path<String>,
 ) -> Result<Response, ErrorResponse> {
 	let validated_input = validate_address(&name_or_address);
 
 	let cache_key = format!("query_single:{validated_input}");
-	let mut conn = redis.client.get_async_connection().await?;
+	let mut conn = redis.client.get_connection().unwrap();
 
-	if let Ok(cached_data) = conn.get::<_, String>(&cache_key).await {
-		if let Ok(record) = serde_json::from_str::<UsernameRecord>(&cached_data) {
-			return Ok(Json(record).into_response());
-		}
+	let cached_data = conn.get::<_, String>(&cache_key).unwrap();
+	if let Ok(record) = serde_json::from_str::<UsernameRecord>(&cached_data) {
+		return Ok(Json(record).into_response());
 	}
 
 	if let Some(name) = sqlx::query_as!(
@@ -64,9 +63,8 @@ pub async fn query_single(
 		let record = UsernameRecord::from(name);
 		// long cache because we can effectively invalidate
 		if let Ok(json_data) = serde_json::to_string(&record) {
-			let _: Result<(), redis::RedisError> = conn
-				.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 60 * 24)
-				.await;
+			let _: RedisResult<()> =
+				conn.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 60 * 24);
 		}
 		return Ok(Json(record).into_response());
 	}

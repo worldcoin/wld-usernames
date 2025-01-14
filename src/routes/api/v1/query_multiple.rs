@@ -1,7 +1,7 @@
-use crate::config::RedisClient;
+use crate::config::DebugClusterClient;
 use axum::Extension;
 use axum_jsonschema::Json;
-use redis::AsyncCommands;
+use redis::{Commands, RedisResult};
 
 use crate::{
 	config::Db,
@@ -11,7 +11,7 @@ use crate::{
 
 pub async fn query_multiple(
 	Extension(db): Extension<Db>,
-	Extension(redis): Extension<RedisClient>,
+	Extension(redis): Extension<DebugClusterClient>,
 	Json(payload): Json<QueryAddressesPayload>,
 ) -> Result<Json<Vec<UsernameRecord>>, ErrorResponse> {
 	let addresses = payload
@@ -34,17 +34,15 @@ pub async fn query_multiple(
 	.fetch_all(&db.read_only)
 	.await?;
 
-	let records_json: Vec<UsernameRecord> = names.into_iter().map(UsernameRecord::from).collect();
+	let records: Vec<UsernameRecord> = names.into_iter().map(UsernameRecord::from).collect();
 	let cache_key = format!("query_multiple:{:?}", addresses.join(";"));
-	let mut conn = redis.client.get_async_connection().await?;
+	let mut conn = redis.client.get_connection().unwrap();
 
-	if let Ok(json_data) = serde_json::to_string(&records_json) {
-		let _: Result<(), redis::RedisError> = conn
-			.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 5)
-			.await;
+	if let Ok(json_data) = serde_json::to_string(&records) {
+		let _: RedisResult<()> = conn.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 5);
 	}
 
-	Ok(Json(records_json))
+	Ok(Json(records))
 }
 
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {

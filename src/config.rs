@@ -1,17 +1,18 @@
+use crate::blocklist::{Blocklist, BlocklistExt};
 use anyhow::Context;
 use axum::Extension;
+use core::fmt::{Debug, Formatter};
 use idkit::session::AppId;
-use redis::Client;
+use redis::cluster::ClusterClient;
 use regex::Regex;
 use sqlx::{migrate::MigrateError, postgres::PgPoolOptions, PgPool};
 use std::{
 	env::{self, VarError},
+	fmt,
 	num::ParseIntError,
 	sync::{Arc, LazyLock},
 	time::Duration,
 };
-
-use crate::blocklist::{Blocklist, BlocklistExt};
 
 #[allow(clippy::module_name_repetitions)]
 pub type ConfigExt = Extension<Arc<Config>>;
@@ -23,6 +24,23 @@ pub static DEVICE_USERNAME_REGEX: LazyLock<Regex> =
 pub static USERNAME_SEARCH_REGEX: LazyLock<Regex> =
 	LazyLock::new(|| Regex::new(r"^[a-z]\w{0,13}([a-z0-9](\.\d{1,4})?)$").unwrap());
 
+#[derive(Clone)]
+pub struct DebugClusterClient {
+	pub client: ClusterClient,
+}
+
+impl DebugClusterClient {
+	pub fn new(url: String) -> Result<Self, redis::RedisError> {
+		let client = ClusterClient::new(vec![url])?;
+		Ok(Self { client })
+	}
+}
+
+impl Debug for DebugClusterClient {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		f.debug_struct("DebugClusterClient").finish()
+	}
+}
 #[derive(Debug)]
 pub struct Config {
 	pub wld_app_id: AppId,
@@ -31,18 +49,13 @@ pub struct Config {
 	pub developer_portal_url: String,
 	db_client: Option<PgPool>,
 	db_read_client: Option<PgPool>,
-	redis_client: Option<Client>,
+	redis_client: Option<DebugClusterClient>,
 	blocklist: Option<Blocklist>,
 }
 #[derive(Clone)]
 pub struct Db {
 	pub read_only: PgPool,
 	pub read_write: PgPool,
-}
-
-#[derive(Clone)]
-pub struct RedisClient {
-	pub client: Client,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -85,7 +98,8 @@ impl Config {
 			.await?;
 
 		let redis_url = env::var("REDIS_URL").context("REDIS_URL environment variable not set")?;
-		let redis_client = Client::open(redis_url)?;
+
+		let redis_client = DebugClusterClient::new(redis_url)?;
 
 		Ok(Self {
 			db_client: Some(db_client),
@@ -117,10 +131,8 @@ impl Config {
 		})
 	}
 
-	pub fn redis_extension(&mut self) -> Extension<RedisClient> {
-		Extension(RedisClient {
-			client: self.redis_client.take().unwrap(),
-		})
+	pub fn redis_extension(&mut self) -> Extension<DebugClusterClient> {
+		Extension(self.redis_client.take().unwrap())
 	}
 
 	pub fn blocklist_extension(&mut self) -> BlocklistExt {
