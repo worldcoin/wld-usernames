@@ -12,6 +12,9 @@ services:
       POSTGRES_PASSWORD: password
   redis:
     image: redis:7
-    command: redis-server --requirepass password
+    command: redis-server --requirepass password --port 6379 --tls-port 6380 --tls-cert-file /certs/redis.crt --tls-key-file /certs/redis.key --tls-ca-cert-file /certs/ca.crt
     ports:
-      - "6379:6379"
+      - "6379:6379" # Regular connection
+      - "6380:6380" # TLS connection
+    volumes:
+      - ./certs:/certs
