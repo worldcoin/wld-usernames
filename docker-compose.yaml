@@ -11,6 +11,6 @@ services:
     environment:
       POSTGRES_PASSWORD: password
   redis:
-    image: redis:6
+    image: redis:7
     ports:
       - "6379:6379"
