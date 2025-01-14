@@ -1,4 +1,5 @@
 use crate::config::RedisClient;
+use crate::utils::ONE_MINUTE_IN_SECONDS;
 use crate::{
 	config::{Db, USERNAME_SEARCH_REGEX},
 	types::{ErrorResponse, NameSearch, UsernameRecord},
@@ -45,13 +46,15 @@ pub async fn search(
 	.fetch_all(&db.read_only)
 	.await?;
 
-	let records_json: Vec<UsernameRecord> = names.into_iter().map(UsernameRecord::from).collect();
+	let records: Vec<UsernameRecord> = names.into_iter().map(UsernameRecord::from).collect();
 
-	if let Ok(json_data) = serde_json::to_string(&records_json) {
-		let _: Result<(), redis::RedisError> = conn.set_ex(&cache_key, json_data, 600).await;
+	if let Ok(json_data) = serde_json::to_string(&records) {
+		let _: Result<(), redis::RedisError> = conn
+			.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 5)
+			.await;
 	}
 
-	Ok(Json(records_json).into_response())
+	Ok(Json(records).into_response())
 }
 
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
