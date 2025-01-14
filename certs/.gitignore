@@ -1,0 +1,6 @@
+ca.crt
+ca.key
+ca.srl
+redis.crt
+redis.csr
+redis.key
