@@ -1,16 +1,18 @@
+use crate::blocklist::{Blocklist, BlocklistExt};
 use anyhow::Context;
 use axum::Extension;
+use core::fmt::{Debug, Formatter};
 use idkit::session::AppId;
+use redis::cluster::ClusterClient;
 use regex::Regex;
 use sqlx::{migrate::MigrateError, postgres::PgPoolOptions, PgPool};
 use std::{
 	env::{self, VarError},
+	fmt,
 	num::ParseIntError,
 	sync::{Arc, LazyLock},
 	time::Duration,
 };
-
-use crate::blocklist::{Blocklist, BlocklistExt};
 
 #[allow(clippy::module_name_repetitions)]
 pub type ConfigExt = Extension<Arc<Config>>;
@@ -20,8 +22,25 @@ pub static USERNAME_REGEX: LazyLock<Regex> =
 pub static DEVICE_USERNAME_REGEX: LazyLock<Regex> =
 	LazyLock::new(|| Regex::new(r"^[a-z]\w{2,13}[a-z0-9]\.\d{4}$").unwrap());
 pub static USERNAME_SEARCH_REGEX: LazyLock<Regex> =
-	LazyLock::new(|| Regex::new(r"^[a-z]\w{0,13}[a-z0-9]$").unwrap());
+	LazyLock::new(|| Regex::new(r"^[a-z]\w{0,13}([a-z0-9](\.\d{1,4})?)$").unwrap());
 
+#[derive(Clone)]
+pub struct DebugClusterClient {
+	pub client: ClusterClient,
+}
+
+impl DebugClusterClient {
+	pub fn new(url: String) -> Result<Self, redis::RedisError> {
+		let client = ClusterClient::new(vec![url])?;
+		Ok(Self { client })
+	}
+}
+
+impl Debug for DebugClusterClient {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		f.debug_struct("DebugClusterClient").finish()
+	}
+}
 #[derive(Debug)]
 pub struct Config {
 	pub wld_app_id: AppId,
@@ -30,6 +49,7 @@ pub struct Config {
 	pub developer_portal_url: String,
 	db_client: Option<PgPool>,
 	db_read_client: Option<PgPool>,
+	redis_client: Option<DebugClusterClient>,
 	blocklist: Option<Blocklist>,
 }
 #[derive(Clone)]
@@ -48,6 +68,8 @@ pub enum Error {
 	ChainId(#[from] ParseIntError),
 	#[error(transparent)]
 	EnvWithContext(#[from] anyhow::Error),
+	#[error(transparent)]
+	Redis(#[from] redis::RedisError),
 }
 
 impl Config {
@@ -75,6 +97,10 @@ impl Config {
 			)
 			.await?;
 
+		let redis_url = env::var("REDIS_URL").context("REDIS_URL environment variable not set")?;
+
+		let redis_client = DebugClusterClient::new(redis_url)?;
+
 		Ok(Self {
 			db_client: Some(db_client),
 			db_read_client: Some(db_read_client),
@@ -90,6 +116,7 @@ impl Config {
 			},
 			developer_portal_url: env::var("DEVELOPER_PORTAL_ENDPOINT")
 				.context("DEVELOPER_PORTAL_ENDPOINT environment variable not set")?,
+			redis_client: Some(redis_client),
 		})
 	}
 
@@ -102,6 +129,10 @@ impl Config {
 			read_only: self.db_read_client.take().unwrap(),
 			read_write: self.db_client.take().unwrap(),
 		})
+	}
+
+	pub fn redis_extension(&mut self) -> Extension<DebugClusterClient> {
+		Extension(self.redis_client.take().unwrap())
 	}
 
 	pub fn blocklist_extension(&mut self) -> BlocklistExt {

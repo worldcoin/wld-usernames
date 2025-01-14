@@ -28,3 +28,5 @@ pub fn decode_ens_name(name: &str) -> String {
 
 	labels.join(".")
 }
+
+pub const ONE_MINUTE_IN_SECONDS: u64 = 60;

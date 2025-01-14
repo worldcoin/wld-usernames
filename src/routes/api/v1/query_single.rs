@@ -8,15 +8,28 @@ use axum::{
 };
 use axum_jsonschema::Json;
 
+use crate::utils::ONE_MINUTE_IN_SECONDS;
 use crate::{
-	config::Db,
+	config::{Db, DebugClusterClient},
 	types::{ErrorResponse, MovedRecord, Name, UsernameRecord},
 };
+use redis::{Commands, RedisResult};
 
 pub async fn query_single(
 	Extension(db): Extension<Db>,
+	Extension(redis): Extension<DebugClusterClient>,
 	Path(name_or_address): Path<String>,
 ) -> Result<Response, ErrorResponse> {
+	let validated_input = validate_address(&name_or_address);
+
+	let cache_key = format!("query_single:{validated_input}");
+	let mut conn = redis.client.get_connection().unwrap();
+
+	let cached_data = conn.get::<_, String>(&cache_key).unwrap();
+	if let Ok(record) = serde_json::from_str::<UsernameRecord>(&cached_data) {
+		return Ok(Json(record).into_response());
+	}
+
 	if let Some(name) = sqlx::query_as!(
 		Name,
 		r#"
@@ -42,13 +55,19 @@ pub async fn query_single(
         FROM names 
         WHERE address = $1 AND username <> $1
         "#,
-		validate_address(&name_or_address)
+		validated_input
 	)
 	.fetch_optional(&db.read_only)
 	.await?
 	{
-		return Ok(Json(UsernameRecord::from(name)).into_response());
-	};
+		let record = UsernameRecord::from(name);
+		// long cache because we can effectively invalidate
+		if let Ok(json_data) = serde_json::to_string(&record) {
+			let _: RedisResult<()> =
+				conn.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 60 * 24);
+		}
+		return Ok(Json(record).into_response());
+	}
 
 	if let Some(moved) = sqlx::query_as!(
 		MovedRecord,
