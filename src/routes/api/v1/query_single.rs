@@ -7,25 +7,24 @@ use axum::{
 	Extension,
 };
 use axum_jsonschema::Json;
+use redis::{aio::ConnectionManager, AsyncCommands};
 
+use crate::utils::ONE_MINUTE_IN_SECONDS;
 use crate::{
 	config::Db,
 	types::{ErrorResponse, MovedRecord, Name, UsernameRecord},
 };
-use crate::{config::RedisClient, utils::ONE_MINUTE_IN_SECONDS};
-use redis::AsyncCommands;
 
 pub async fn query_single(
 	Extension(db): Extension<Db>,
-	Extension(redis): Extension<RedisClient>,
+	Extension(mut redis): Extension<ConnectionManager>,
 	Path(name_or_address): Path<String>,
 ) -> Result<Response, ErrorResponse> {
 	let validated_input = validate_address(&name_or_address);
 
 	let cache_key = format!("query_single:{validated_input}");
-	let mut conn = redis.connection.clone();
 
-	if let Ok(cached_data) = conn.get::<_, String>(&cache_key).await {
+	if let Ok(cached_data) = redis.get::<_, String>(&cache_key).await {
 		if let Ok(record) = serde_json::from_str::<UsernameRecord>(&cached_data) {
 			return Ok(Json(record).into_response());
 		}
@@ -64,7 +63,7 @@ pub async fn query_single(
 		let record = UsernameRecord::from(name);
 		// long cache because we can effectively invalidate
 		if let Ok(json_data) = serde_json::to_string(&record) {
-			let _: Result<(), redis::RedisError> = conn
+			let _: Result<(), redis::RedisError> = redis
 				.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 60 * 24 * 7)
 				.await;
 		}

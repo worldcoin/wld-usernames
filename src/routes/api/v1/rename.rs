@@ -3,21 +3,20 @@ use axum_jsonschema::Json;
 use http::StatusCode;
 use idkit::session::VerificationLevel;
 
-use crate::config::RedisClient;
 use crate::{
 	blocklist::BlocklistExt,
 	config::{ConfigExt, Db, DEVICE_USERNAME_REGEX, USERNAME_REGEX},
 	types::{ErrorResponse, MovedAddress, Name, RenamePayload},
 	verify,
 };
-use redis::AsyncCommands;
+use redis::{aio::ConnectionManager, AsyncCommands};
 
 #[allow(clippy::too_many_lines)] // TODO: refactor
 #[allow(dependency_on_unit_never_type_fallback)]
 pub async fn rename(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<Db>,
-	Extension(redis): Extension<RedisClient>,
+	Extension(mut redis): Extension<ConnectionManager>,
 	Extension(blocklist): BlocklistExt,
 	Json(payload): Json<RenamePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
@@ -135,11 +134,12 @@ pub async fn rename(
 
 	let query_single_username_cache_key = format!("query_single:{}", payload.old_username);
 	let query_single_address_cache_key = format!("query_single:{}", moved_address.address);
-	let mut conn = redis.connection.clone();
 
-	conn.del::<_, String>(&query_single_username_cache_key)
+	redis
+		.del::<_, String>(&query_single_username_cache_key)
 		.await?;
-	conn.del::<_, String>(&query_single_address_cache_key)
+	redis
+		.del::<_, String>(&query_single_address_cache_key)
 		.await?;
 
 	Ok(StatusCode::OK)
