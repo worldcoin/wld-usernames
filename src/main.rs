@@ -20,10 +20,17 @@ async fn main() -> anyhow::Result<()> {
 
 	tracing::info!("👩 Server started");
 
+	// required for tls support
+	init_crypto();
+
 	let config = config::Config::from_env().await?;
 	config.migrate_database().await?;
-
 	tracing::info!("👩‍🌾 Migrations run");
 
 	server::start(config).await
+}
+fn init_crypto() {
+	rustls::crypto::ring::default_provider()
+		.install_default()
+		.expect("Error initializing crypto provider");
 }

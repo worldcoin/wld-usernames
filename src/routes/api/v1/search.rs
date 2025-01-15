@@ -1,3 +1,4 @@
+use crate::utils::ONE_MINUTE_IN_SECONDS;
 use crate::{
 	config::{Db, USERNAME_SEARCH_REGEX},
 	types::{ErrorResponse, NameSearch, UsernameRecord},
@@ -8,15 +9,26 @@ use axum::{
 	Extension,
 };
 use axum_jsonschema::Json;
+use redis::aio::ConnectionManager;
+use redis::AsyncCommands;
 
 pub async fn search(
 	Extension(db): Extension<Db>,
+	Extension(mut redis): Extension<ConnectionManager>,
 	Path(username): Path<String>,
 ) -> Result<Response, ErrorResponse> {
 	let lowercase_username = username.to_lowercase();
 
 	if !USERNAME_SEARCH_REGEX.is_match(&lowercase_username) {
 		return Ok(Json(Vec::<UsernameRecord>::new()).into_response());
+	}
+
+	let cache_key = format!("search:{lowercase_username}");
+
+	if let Ok(cached_data) = redis.get::<_, String>(&cache_key).await {
+		if let Ok(records) = serde_json::from_str::<Vec<UsernameRecord>>(&cached_data) {
+			return Ok(Json(records).into_response());
+		}
 	}
 
 	let names = sqlx::query_as!(
@@ -33,13 +45,15 @@ pub async fn search(
 	.fetch_all(&db.read_only)
 	.await?;
 
-	Ok(Json(
-		names
-			.into_iter()
-			.map(UsernameRecord::from)
-			.collect::<Vec<UsernameRecord>>(),
-	)
-	.into_response())
+	let records: Vec<UsernameRecord> = names.into_iter().map(UsernameRecord::from).collect();
+
+	if let Ok(json_data) = serde_json::to_string(&records) {
+		let _: Result<(), redis::RedisError> = redis
+			.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 5)
+			.await;
+	}
+
+	Ok(Json(records).into_response())
 }
 
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {

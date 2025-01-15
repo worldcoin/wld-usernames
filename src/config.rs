@@ -1,10 +1,12 @@
 use anyhow::Context;
 use axum::Extension;
 use idkit::session::AppId;
+use redis::aio::ConnectionManager;
 use regex::Regex;
 use sqlx::{migrate::MigrateError, postgres::PgPoolOptions, PgPool};
 use std::{
 	env::{self, VarError},
+	fmt::{self, Debug, Formatter},
 	num::ParseIntError,
 	sync::{Arc, LazyLock},
 	time::Duration,
@@ -20,7 +22,23 @@ pub static USERNAME_REGEX: LazyLock<Regex> =
 pub static DEVICE_USERNAME_REGEX: LazyLock<Regex> =
 	LazyLock::new(|| Regex::new(r"^[a-z]\w{2,13}[a-z0-9]\.\d{4}$").unwrap());
 pub static USERNAME_SEARCH_REGEX: LazyLock<Regex> =
-	LazyLock::new(|| Regex::new(r"^[a-z]\w{0,13}[a-z0-9]$").unwrap());
+	LazyLock::new(|| Regex::new(r"^[a-z]\w{0,13}([a-z0-9](\.\d{1,4})?)$").unwrap());
+
+#[derive(Clone)]
+pub struct ConnectionManagerDebug {
+	pub connection: ConnectionManager,
+}
+impl Debug for ConnectionManagerDebug {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		write!(f, "ConnectionManagerDebug",)
+	}
+}
+
+impl From<ConnectionManager> for ConnectionManagerDebug {
+	fn from(connection: ConnectionManager) -> Self {
+		Self { connection }
+	}
+}
 
 #[derive(Debug)]
 pub struct Config {
@@ -30,6 +48,7 @@ pub struct Config {
 	pub developer_portal_url: String,
 	db_client: Option<PgPool>,
 	db_read_client: Option<PgPool>,
+	redis_pool: Option<ConnectionManagerDebug>,
 	blocklist: Option<Blocklist>,
 }
 #[derive(Clone)]
@@ -48,6 +67,8 @@ pub enum Error {
 	ChainId(#[from] ParseIntError),
 	#[error(transparent)]
 	EnvWithContext(#[from] anyhow::Error),
+	#[error(transparent)]
+	Redis(#[from] redis::RedisError),
 }
 
 impl Config {
@@ -75,6 +96,14 @@ impl Config {
 			)
 			.await?;
 
+		let redis_url = env::var("REDIS_URL").context("REDIS_URL environment variable not set")?;
+		// for local dev
+		// let redis_client = Client::open(redis_url)?;
+
+		let redis_pool = build_redis_pool(redis_url)
+			.await
+			.expect("Failed to connect to Redis");
+
 		Ok(Self {
 			db_client: Some(db_client),
 			db_read_client: Some(db_read_client),
@@ -90,6 +119,7 @@ impl Config {
 			},
 			developer_portal_url: env::var("DEVELOPER_PORTAL_ENDPOINT")
 				.context("DEVELOPER_PORTAL_ENDPOINT environment variable not set")?,
+			redis_pool: Some(ConnectionManagerDebug::from(redis_pool)),
 		})
 	}
 
@@ -104,6 +134,10 @@ impl Config {
 		})
 	}
 
+	pub fn redis_extension(&mut self) -> Extension<ConnectionManager> {
+		Extension(self.redis_pool.take().unwrap().connection)
+	}
+
 	pub fn blocklist_extension(&mut self) -> BlocklistExt {
 		Extension(Arc::new(self.blocklist.take().unwrap()))
 	}
@@ -111,4 +145,14 @@ impl Config {
 	pub fn extension(self) -> ConfigExt {
 		Extension(Arc::new(self))
 	}
+}
+
+async fn build_redis_pool(mut redis_url: String) -> redis::RedisResult<ConnectionManager> {
+	if !redis_url.starts_with("redis://") && !redis_url.starts_with("rediss://") {
+		redis_url = format!("redis://{redis_url}");
+	}
+
+	let client = redis::Client::open(redis_url)?;
+
+	ConnectionManager::new(client).await
 }

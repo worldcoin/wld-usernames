@@ -6,15 +6,17 @@ use idkit::session::VerificationLevel;
 use crate::{
 	blocklist::BlocklistExt,
 	config::{ConfigExt, Db, DEVICE_USERNAME_REGEX, USERNAME_REGEX},
-	types::{ErrorResponse, Name, RenamePayload},
+	types::{ErrorResponse, MovedAddress, Name, RenamePayload},
 	verify,
 };
+use redis::{aio::ConnectionManager, AsyncCommands};
 
 #[allow(clippy::too_many_lines)] // TODO: refactor
 #[allow(dependency_on_unit_never_type_fallback)]
 pub async fn rename(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<Db>,
+	Extension(mut redis): Extension<ConnectionManager>,
 	Extension(blocklist): BlocklistExt,
 	Json(payload): Json<RenamePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
@@ -111,12 +113,13 @@ pub async fn rename(
 		.await?;
 	}
 
-	sqlx::query!(
-		"UPDATE names SET username = $1 WHERE username = $2",
+	let moved_address = sqlx::query_as!(
+		MovedAddress,
+		"UPDATE names SET username = $1 WHERE username = $2 RETURNING address",
 		&payload.new_username,
 		&payload.old_username,
 	)
-	.execute(&mut *tx)
+	.fetch_one(&mut *tx)
 	.await?;
 
 	sqlx::query!(
@@ -128,6 +131,16 @@ pub async fn rename(
 	.await?;
 
 	tx.commit().await?;
+
+	let query_single_username_cache_key = format!("query_single:{}", payload.old_username);
+	let query_single_address_cache_key = format!("query_single:{}", moved_address.address);
+
+	redis
+		.del::<_, String>(&query_single_username_cache_key)
+		.await?;
+	redis
+		.del::<_, String>(&query_single_address_cache_key)
+		.await?;
 
 	Ok(StatusCode::OK)
 }

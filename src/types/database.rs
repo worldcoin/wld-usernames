@@ -55,3 +55,8 @@ pub struct NameSearch {
 	pub address: String,
 	pub profile_picture_url: Option<String>,
 }
+
+#[derive(Debug, sqlx::FromRow)] // Add other derives as needed like Debug, Clone, etc.
+pub struct MovedAddress {
+	pub address: String,
+}
