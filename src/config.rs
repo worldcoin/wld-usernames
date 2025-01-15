@@ -1,6 +1,7 @@
 use anyhow::Context;
 use axum::Extension;
 use idkit::session::AppId;
+use redis::{aio::MultiplexedConnection, Client, TlsCertificates};
 use regex::Regex;
 use sqlx::{migrate::MigrateError, postgres::PgPoolOptions, PgPool};
 use std::{
@@ -20,7 +21,7 @@ pub static USERNAME_REGEX: LazyLock<Regex> =
 pub static DEVICE_USERNAME_REGEX: LazyLock<Regex> =
 	LazyLock::new(|| Regex::new(r"^[a-z]\w{2,13}[a-z0-9]\.\d{4}$").unwrap());
 pub static USERNAME_SEARCH_REGEX: LazyLock<Regex> =
-	LazyLock::new(|| Regex::new(r"^[a-z]\w{0,13}[a-z0-9]$").unwrap());
+	LazyLock::new(|| Regex::new(r"^[a-z]\w{0,13}([a-z0-9](\.\d{1,4})?)$").unwrap());
 
 #[derive(Debug)]
 pub struct Config {
@@ -30,12 +31,18 @@ pub struct Config {
 	pub developer_portal_url: String,
 	db_client: Option<PgPool>,
 	db_read_client: Option<PgPool>,
+	redis_connection: Option<MultiplexedConnection>, // Change this field
 	blocklist: Option<Blocklist>,
 }
 #[derive(Clone)]
 pub struct Db {
 	pub read_only: PgPool,
 	pub read_write: PgPool,
+}
+
+#[derive(Clone)]
+pub struct RedisClient {
+	pub connection: MultiplexedConnection,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -48,6 +55,8 @@ pub enum Error {
 	ChainId(#[from] ParseIntError),
 	#[error(transparent)]
 	EnvWithContext(#[from] anyhow::Error),
+	#[error(transparent)]
+	Redis(#[from] redis::RedisError),
 }
 
 impl Config {
@@ -75,6 +84,22 @@ impl Config {
 			)
 			.await?;
 
+		let redis_url = env::var("REDIS_URL").context("REDIS_URL environment variable not set")?;
+		// for local dev
+		// let redis_client = Client::open(redis_url)?;
+		let redis_client = Client::build_with_tls(
+			redis_url,
+			TlsCertificates {
+				client_tls: None,
+				root_cert: None,
+			},
+		)?;
+
+		let redis_connection = redis_client
+			.get_multiplexed_async_connection()
+			.await
+			.context("Failed to establish Redis connection")?;
+
 		Ok(Self {
 			db_client: Some(db_client),
 			db_read_client: Some(db_read_client),
@@ -90,6 +115,7 @@ impl Config {
 			},
 			developer_portal_url: env::var("DEVELOPER_PORTAL_ENDPOINT")
 				.context("DEVELOPER_PORTAL_ENDPOINT environment variable not set")?,
+			redis_connection: Some(redis_connection),
 		})
 	}
 
@@ -101,6 +127,12 @@ impl Config {
 		Extension(Db {
 			read_only: self.db_read_client.take().unwrap(),
 			read_write: self.db_client.take().unwrap(),
+		})
+	}
+
+	pub fn redis_extension(&mut self) -> Extension<RedisClient> {
+		Extension(RedisClient {
+			connection: self.redis_connection.take().unwrap(),
 		})
 	}
 
