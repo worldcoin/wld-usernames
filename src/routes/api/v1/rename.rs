@@ -135,14 +135,7 @@ pub async fn rename(
 
 	let query_single_username_cache_key = format!("query_single:{}", payload.old_username);
 	let query_single_address_cache_key = format!("query_single:{}", moved_address.address);
-	let mut conn = redis
-		.client
-		.get_multiplexed_async_connection()
-		.await
-		.map_err(|e| {
-			tracing::error!("Redis connection error: {}", e);
-			e
-		})?;
+	let mut conn = redis.connection.clone();
 
 	conn.del::<_, String>(&query_single_username_cache_key)
 		.await?;

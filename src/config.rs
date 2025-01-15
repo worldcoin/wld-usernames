@@ -1,7 +1,7 @@
 use anyhow::Context;
 use axum::Extension;
 use idkit::session::AppId;
-use redis::{Client, TlsCertificates};
+use redis::{aio::MultiplexedConnection, Client, TlsCertificates};
 use regex::Regex;
 use sqlx::{migrate::MigrateError, postgres::PgPoolOptions, PgPool};
 use std::{
@@ -31,7 +31,7 @@ pub struct Config {
 	pub developer_portal_url: String,
 	db_client: Option<PgPool>,
 	db_read_client: Option<PgPool>,
-	redis_client: Option<Client>,
+	redis_connection: Option<MultiplexedConnection>, // Change this field
 	blocklist: Option<Blocklist>,
 }
 #[derive(Clone)]
@@ -42,7 +42,7 @@ pub struct Db {
 
 #[derive(Clone)]
 pub struct RedisClient {
-	pub client: Client,
+	pub connection: MultiplexedConnection,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -85,24 +85,8 @@ impl Config {
 			.await?;
 
 		let redis_url = env::var("REDIS_URL").context("REDIS_URL environment variable not set")?;
-		// let parsed_url = Url::parse(&redis_url).context("Failed to parse REDIS_URL")?;
-		// ConnectionInfo {
-		// 	addr: redis::ConnectionAddr::TcpTls {
-		// 		host: parsed_url
-		// 			.host_str()
-		// 			.context("Missing host in REDIS_URL")?
-		// 			.to_string(),
-		// 		port: parsed_url.port().unwrap_or(6379),
-		// 		insecure: true,
-		// 		tls_params: None,
-		// 	},
-		// 	redis: RedisConnectionInfo {
-		// 		db: 0,
-		// 		username: None,
-		// 		password: parsed_url.password().map(String::from),
-		// 		protocol: redis::ProtocolVersion::RESP3,
-		// 	},
-		// }
+		// for local dev
+		// let redis_client = Client::open(redis_url)?;
 		let redis_client = Client::build_with_tls(
 			redis_url,
 			TlsCertificates {
@@ -110,6 +94,11 @@ impl Config {
 				root_cert: None,
 			},
 		)?;
+
+		let redis_connection = redis_client
+			.get_multiplexed_async_connection()
+			.await
+			.context("Failed to establish Redis connection")?;
 
 		Ok(Self {
 			db_client: Some(db_client),
@@ -126,7 +115,7 @@ impl Config {
 			},
 			developer_portal_url: env::var("DEVELOPER_PORTAL_ENDPOINT")
 				.context("DEVELOPER_PORTAL_ENDPOINT environment variable not set")?,
-			redis_client: Some(redis_client),
+			redis_connection: Some(redis_connection),
 		})
 	}
 
@@ -143,7 +132,7 @@ impl Config {
 
 	pub fn redis_extension(&mut self) -> Extension<RedisClient> {
 		Extension(RedisClient {
-			client: self.redis_client.take().unwrap(),
+			connection: self.redis_connection.take().unwrap(),
 		})
 	}
 

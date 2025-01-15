@@ -51,7 +51,6 @@ sqlx = { version = "0.8.2", features = [
 ], default-features = false }
 redis = { version = "0.28", features = ["tokio-comp", "connection-manager", "tls-rustls", "tokio-rustls-comp", "tls-rustls-insecure"] }
 rustls = { version = "0.23", features = ["ring"] }
-deadpool-redis ={ version = "0.18.0", features = ["serde"] }
 
 [build-dependencies]
 chrono = "0.4.38"

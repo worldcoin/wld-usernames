@@ -23,14 +23,7 @@ pub async fn query_single(
 	let validated_input = validate_address(&name_or_address);
 
 	let cache_key = format!("query_single:{validated_input}");
-	let mut conn = redis
-		.client
-		.get_multiplexed_async_connection()
-		.await
-		.map_err(|e| {
-			tracing::error!("Redis connection error: {}", e);
-			e
-		})?;
+	let mut conn = redis.connection.clone();
 
 	if let Ok(cached_data) = conn.get::<_, String>(&cache_key).await {
 		if let Ok(record) = serde_json::from_str::<UsernameRecord>(&cached_data) {
