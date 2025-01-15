@@ -1,7 +1,7 @@
 use anyhow::Context;
 use axum::Extension;
 use idkit::session::AppId;
-use redis::Client;
+use redis::{Client, TlsCertificates};
 use regex::Regex;
 use sqlx::{migrate::MigrateError, postgres::PgPoolOptions, PgPool};
 use std::{
@@ -85,7 +85,31 @@ impl Config {
 			.await?;
 
 		let redis_url = env::var("REDIS_URL").context("REDIS_URL environment variable not set")?;
-		let redis_client = Client::open(redis_url)?;
+		// let parsed_url = Url::parse(&redis_url).context("Failed to parse REDIS_URL")?;
+		// ConnectionInfo {
+		// 	addr: redis::ConnectionAddr::TcpTls {
+		// 		host: parsed_url
+		// 			.host_str()
+		// 			.context("Missing host in REDIS_URL")?
+		// 			.to_string(),
+		// 		port: parsed_url.port().unwrap_or(6379),
+		// 		insecure: true,
+		// 		tls_params: None,
+		// 	},
+		// 	redis: RedisConnectionInfo {
+		// 		db: 0,
+		// 		username: None,
+		// 		password: parsed_url.password().map(String::from),
+		// 		protocol: redis::ProtocolVersion::RESP3,
+		// 	},
+		// }
+		let redis_client = Client::build_with_tls(
+			redis_url,
+			TlsCertificates {
+				client_tls: None,
+				root_cert: None,
+			},
+		)?;
 
 		Ok(Self {
 			db_client: Some(db_client),
