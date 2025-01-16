@@ -17,7 +17,6 @@ services:
     env_file:
       - path: ./.env
         required: true
-    command: redis-server --requirepass password
     ports:
       - "6379:6379"
 
