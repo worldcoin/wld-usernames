@@ -26,3 +26,16 @@ services:
     ports:
       - "8000:8000"
 
+  dd-agent:
+    image: gcr.io/datadoghq/agent:7
+    env_file:
+      - path: ./.env
+        required: true
+    volumes:
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+      - /proc/:/host/proc/:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "8125:8125/udp"
+      - "8126:8126"
+
