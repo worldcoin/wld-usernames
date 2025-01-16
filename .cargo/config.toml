@@ -16,5 +16,6 @@ linker = "musl-gcc"
 
 [target.x86_64-unknown-linux-musl]
 # Target for Linux x86_64 with MUSL
-linker = "musl-gcc"
+# FIXME: linker produces segmentation fault
+# linker = "musl-gcc"
 rustflags = ["-C", "target-feature=+crt-static"] # Static linking for MUSL binaries
