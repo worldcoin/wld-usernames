@@ -1,6 +1,10 @@
 services:
   postgres:
     image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=postgres
     ports:
       - "5432:5432"
     healthcheck:
@@ -8,15 +12,13 @@ services:
       interval: 2s
       timeout: 10s
       retries: 5
-    env_file:
-      - path: ./.env
-        required: true
 
   redis:
     image: redis:7-alpine
-    env_file:
-      - path: ./.env
-        required: true
+    environment:
+      - REDIS_PASSWORD=password
+      - REDIS_DB=0
+      - REDIS_PORT=6379
     ports:
       - "6379:6379"
 
