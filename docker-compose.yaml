@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine
     ports:
       - "5432:5432"
     healthcheck:
@@ -8,10 +8,33 @@ services:
       interval: 2s
       timeout: 10s
       retries: 5
-    environment:
-      POSTGRES_PASSWORD: password
+    env_file:
+      - path: ./.env
+        required: true
+
   redis:
-    image: redis:6
-    command: redis-server --requirepass password
+    image: redis:7-alpine
+    env_file:
+      - path: ./.env
+        required: true
     ports:
       - "6379:6379"
+
+  dynamodb:
+    image: amazon/dynamodb-local
+    ports:
+      - "8000:8000"
+
+  dd-agent:
+    image: gcr.io/datadoghq/agent:7
+    env_file:
+      - path: ./.env
+        required: true
+    volumes:
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+      - /proc/:/host/proc/:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "8125:8125/udp"
+      - "8126:8126"
+

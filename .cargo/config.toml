@@ -1,0 +1,21 @@
+[build]
+# Optionally set a default target if one platform is primary
+# target = "aarch64-apple-darwin"
+
+[target.aarch64-apple-darwin]
+# Target for Apple ARM (e.g., M1/M2)
+linker = "clang"
+
+[target.aarch64-unknown-linux-musl]
+# Target for Linux ARM64 with MUSL
+linker = "musl-gcc"
+
+[target.armv7-unknown-linux-musl]
+# Target for Linux ARMv7 with MUSL
+linker = "musl-gcc"
+
+[target.x86_64-unknown-linux-musl]
+# Target for Linux x86_64 with MUSL
+# FIXME: linker produces segmentation fault
+# linker = "musl-gcc"
+rustflags = ["-C", "target-feature=+crt-static"] # Static linking for MUSL binaries
