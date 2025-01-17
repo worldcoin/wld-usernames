@@ -16,12 +16,6 @@ pub async fn query_multiple(
 		.map(|a| a.0.to_checksum(None))
 		.collect::<Vec<_>>();
 
-	if addresses.len() > 50 {
-		return Err(ErrorResponse::validation_error(
-			"Too many addresses, max is 50".to_string(),
-		));
-	}
-
 	let names = sqlx::query_as!(
 		Name,
 		"SELECT * FROM names WHERE address = ANY($1)",

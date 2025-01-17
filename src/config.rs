@@ -97,12 +97,12 @@ impl Config {
 			.await?;
 
 		let redis_url = env::var("REDIS_URL").context("REDIS_URL environment variable not set")?;
-		// for local dev
-		// let redis_client = Client::open(redis_url)?;
 
 		let redis_pool = build_redis_pool(redis_url)
 			.await
 			.expect("Failed to connect to Redis");
+
+		tracing::info!("✅ Connection to Redis established.");
 
 		Ok(Self {
 			db_client: Some(db_client),
