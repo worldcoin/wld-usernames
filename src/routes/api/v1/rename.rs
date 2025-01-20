@@ -49,7 +49,7 @@ pub async fn rename(
 		Ok(()) => {},
 		Err(verify::Error::Verification(e)) => {
 			tracing::error!(
-				"Rename Verification Error: {}, Payload: {:?}",
+				"Rename Verification Error: {}, payload:{:?}",
 				e.detail,
 				payload
 			);
@@ -57,7 +57,7 @@ pub async fn rename(
 		},
 		Err(e) => {
 			tracing::error!(
-				"Rename Server Error: {}, Payload: {:?}",
+				"Rename Server Error: {}, payload:{:?}",
 				e.to_string(),
 				payload
 			);
@@ -74,7 +74,7 @@ pub async fn rename(
 
 	if !username_regex.is_match(&payload.new_username) {
 		tracing::warn!(
-			"Username does not match the required pattern, Payload: {:?}",
+			"Username does not match the required pattern, payload:{:?}",
 			payload,
 		);
 		return Err(ErrorResponse::validation_error(
@@ -83,7 +83,7 @@ pub async fn rename(
 	}
 
 	blocklist.ensure_valid(&payload.new_username).map_err(|e| {
-		tracing::warn!("Blocklist error, Payload: {:?}", payload);
+		tracing::warn!("Blocklist error, payload:{:?}", payload);
 		ErrorResponse::validation_error(e.to_string())
 	})?;
 
@@ -102,7 +102,7 @@ pub async fn rename(
 	.await?;
 
 	if uniqueness_check.username.unwrap_or_default() {
-		tracing::warn!("Username is already taken, Payload: {:?}", payload);
+		tracing::warn!("Username is already taken, payload:{:?}", payload);
 		return Err(ErrorResponse::validation_error(
 			"Username is already taken".to_string(),
 		));

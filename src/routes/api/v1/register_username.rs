@@ -29,7 +29,7 @@ pub async fn register_username(
 		Ok(()) => {},
 		Err(verify::Error::Verification(e)) => {
 			tracing::error!(
-				"Register Verification Error: {}, Payload: {:?}",
+				"Register Verification Error: {}, payload:{:?}",
 				e.detail,
 				payload
 			);
@@ -37,7 +37,7 @@ pub async fn register_username(
 		},
 		Err(e) => {
 			tracing::error!(
-				"Register Server Error: {}, Payload: {:?}",
+				"Register Server Error: {}, payload:{:?}",
 				e.to_string(),
 				payload
 			);
@@ -54,7 +54,7 @@ pub async fn register_username(
 
 	if !username_regex.is_match(&payload.username) {
 		tracing::warn!(
-			"Username does not match the required pattern, Payload: {:?}",
+			"Username does not match the required pattern, payload:{:?}",
 			payload
 		);
 		return Err(ErrorResponse::validation_error(
@@ -63,7 +63,7 @@ pub async fn register_username(
 	}
 
 	blocklist.ensure_valid(&payload.username).map_err(|e| {
-		tracing::warn!("Username is blocked, Payload: {:?}", payload);
+		tracing::warn!("Username is blocked, payload:{:?}", payload);
 		ErrorResponse::validation_error(e.to_string())
 	})?;
 
@@ -78,7 +78,7 @@ pub async fn register_username(
 		.await?;
 
 	if uniqueness_check.username.unwrap_or_default() {
-		tracing::warn!("Username is already taken, Payload: {:?}", payload);
+		tracing::warn!("Username is already taken, payload:{:?}", payload);
 		return Err(ErrorResponse::validation_error(
 			"Username is already taken".to_string(),
 		));
@@ -86,7 +86,7 @@ pub async fn register_username(
 
 	if uniqueness_check.world_id.unwrap_or_default() {
 		tracing::warn!(
-			"This World ID has already registered a username, Payload: {:?}",
+			"This World ID has already registered a username, payload:{:?}",
 			payload
 		);
 		return Err(ErrorResponse::validation_error(
