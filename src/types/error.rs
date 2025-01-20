@@ -27,23 +27,21 @@ impl ErrorResponse {
 	}
 
 	pub fn unauthorized(error: String) -> Self {
-		tracing::error!("Unauthorized: {}", error);
+		tracing::warn!("Unauthorized: {}", error);
 		Self {
 			error,
 			status: StatusCode::UNAUTHORIZED,
 		}
 	}
 
-	pub fn validation_error(error: String) -> Self {
-		tracing::error!("Validation Error: {}", error);
+	pub const fn validation_error(error: String) -> Self {
 		Self {
 			error,
 			status: StatusCode::UNPROCESSABLE_ENTITY,
 		}
 	}
 
-	pub fn server_error(error: String) -> Self {
-		tracing::error!("Internal Server Error: {}", error);
+	pub const fn server_error(error: String) -> Self {
 		Self {
 			error,
 			status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -52,7 +50,13 @@ impl ErrorResponse {
 }
 
 impl<E: std::error::Error> From<E> for ErrorResponse {
-	fn from(_: E) -> Self {
+	fn from(e: E) -> Self {
+		// additional, helpful debug info
+		tracing::error!(
+			"Internal Server Error, source: {:?}, error: {}",
+			e.source(),
+			e.to_string()
+		);
 		Self::server_error("Internal Server Error".to_string())
 	}
 }

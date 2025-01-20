@@ -73,14 +73,19 @@ pub async fn rename(
 	};
 
 	if !username_regex.is_match(&payload.new_username) {
+		tracing::warn!(
+			"Username does not match the required pattern, Payload: {:?}",
+			payload,
+		);
 		return Err(ErrorResponse::validation_error(
 			"Username does not match the required pattern".to_string(),
 		));
 	}
 
-	blocklist
-		.ensure_valid(&payload.new_username)
-		.map_err(|e| ErrorResponse::validation_error(e.to_string()))?;
+	blocklist.ensure_valid(&payload.new_username).map_err(|e| {
+		tracing::warn!("Blocklist error, Payload: {:?}", payload);
+		ErrorResponse::validation_error(e.to_string())
+	})?;
 
 	let uniqueness_check = sqlx::query!(
 		"SELECT
@@ -97,6 +102,7 @@ pub async fn rename(
 	.await?;
 
 	if uniqueness_check.username.unwrap_or_default() {
+		tracing::warn!("Username is already taken, Payload: {:?}", payload);
 		return Err(ErrorResponse::validation_error(
 			"Username is already taken".to_string(),
 		));
