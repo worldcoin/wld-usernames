@@ -9,6 +9,7 @@ mod utils;
 mod verify;
 
 #[tokio::main]
+#[tracing::instrument]
 async fn main() -> anyhow::Result<()> {
 	dotenvy::dotenv().ok();
 
