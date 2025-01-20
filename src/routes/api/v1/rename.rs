@@ -11,6 +11,7 @@ use crate::{
 };
 use redis::{aio::ConnectionManager, AsyncCommands};
 
+#[tracing::instrument(skip_all)]
 #[allow(clippy::too_many_lines)] // TODO: refactor
 #[allow(dependency_on_unit_never_type_fallback)]
 pub async fn rename(

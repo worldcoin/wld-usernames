@@ -1,7 +1,7 @@
-use crate::utils::ONE_MINUTE_IN_SECONDS;
 use crate::{
 	config::{Db, USERNAME_SEARCH_REGEX},
 	types::{ErrorResponse, NameSearch, UsernameRecord},
+	utils::ONE_MINUTE_IN_SECONDS,
 };
 use axum::{
 	extract::Path,
@@ -9,9 +9,9 @@ use axum::{
 	Extension,
 };
 use axum_jsonschema::Json;
-use redis::aio::ConnectionManager;
-use redis::AsyncCommands;
+use redis::{aio::ConnectionManager, AsyncCommands};
 
+#[tracing::instrument(skip_all)]
 pub async fn search(
 	Extension(db): Extension<Db>,
 	Extension(mut redis): Extension<ConnectionManager>,
