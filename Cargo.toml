@@ -26,7 +26,7 @@ tokio = { version = "1.43.0", features = ["full"] }
 chrono = { version = "0.4.39", features = ["serde"] }
 reqwest = { version = "0.12.12", features = ["json"] }
 serde = { version = "1.0.217", features = ["derive"] }
-tower-http = { version = "0.6.2", features = ["cors"] }
+tower-http = { version = "0.6.2", features = ["cors", "timeout"] }
 axum-jsonschema = { version = "0.8.0", features = ["aide"] }
 schemars = { version = "0.8.21", features = ["chrono", "url"] }
 aide = { version = "0.13.4", features = ["axum", "macros", "scalar"] }
