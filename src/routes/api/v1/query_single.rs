@@ -43,7 +43,7 @@ pub async fn query_single(
             created_at as "created_at!",
             updated_at as "updated_at!"
         FROM names 
-        WHERE username = $1 
+        WHERE LOWER(username) = LOWER($1) 
         UNION ALL 
         SELECT 
             username as "username!",
@@ -54,7 +54,7 @@ pub async fn query_single(
             created_at as "created_at!",
             updated_at as "updated_at!"
         FROM names 
-        WHERE address = $1 AND username <> $1
+        WHERE address = $1 AND LOWER(username) <> LOWER($1)
         "#,
 		validated_input
 	)
