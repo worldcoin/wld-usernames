@@ -9,14 +9,12 @@ mod utils;
 mod verify;
 
 #[tokio::main]
+#[tracing::instrument]
 async fn main() -> anyhow::Result<()> {
 	dotenvy::dotenv().ok();
 
-	tracing_subscriber::fmt()
-		.json()
-		.with_target(false)
-		.flatten_event(true)
-		.init();
+	// Initialize Datadog tracing
+	let (_guard, _tracer_shutdown) = datadog_tracing::init()?;
 
 	tracing::info!("👩 Server started");
 

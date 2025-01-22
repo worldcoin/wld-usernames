@@ -9,12 +9,13 @@ use axum::{
 use axum_jsonschema::Json;
 use redis::{aio::ConnectionManager, AsyncCommands};
 
-use crate::utils::ONE_MINUTE_IN_SECONDS;
 use crate::{
 	config::Db,
 	types::{ErrorResponse, MovedRecord, Name, UsernameRecord},
+	utils::ONE_MINUTE_IN_SECONDS,
 };
 
+#[tracing::instrument(skip_all)]
 pub async fn query_single(
 	Extension(db): Extension<Db>,
 	Extension(mut redis): Extension<ConnectionManager>,

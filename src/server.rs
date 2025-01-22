@@ -1,8 +1,12 @@
 use aide::openapi::{self, OpenApi};
 use anyhow::Result;
 use axum::Extension;
-use std::{env, net::SocketAddr};
-use tokio::{net::TcpListener, signal};
+use datadog_tracing::axum::{
+	shutdown_signal as dd_shutdown_signal, OtelAxumLayer, OtelInResponseLayer,
+};
+use std::{env, net::SocketAddr, time::Duration};
+use tokio::net::TcpListener;
+use tower_http::timeout::TimeoutLayer;
 
 use crate::{config::Config, routes};
 
@@ -19,6 +23,11 @@ pub async fn start(mut config: Config) -> Result<()> {
 	let router = routes::handler()
 		.finish_api(&mut openapi)
 		.layer(Extension(openapi))
+		.layer(OtelInResponseLayer)
+		.layer((
+			OtelAxumLayer::default(),
+			TimeoutLayer::new(Duration::from_secs(90)),
+		))
 		.layer(config.db_extension())
 		.layer(config.redis_extension())
 		.layer(config.blocklist_extension())
@@ -33,32 +42,8 @@ pub async fn start(mut config: Config) -> Result<()> {
 	tracing::info!("Starting server on {addr}...");
 
 	axum::serve(listener, router.into_make_service())
-		.with_graceful_shutdown(shutdown_signal())
+		.with_graceful_shutdown(dd_shutdown_signal())
 		.await?;
 
 	Ok(())
-}
-
-async fn shutdown_signal() {
-	let ctrl_c = async {
-		signal::ctrl_c()
-			.await
-			.expect("failed to install Ctrl+C handler");
-	};
-
-	#[cfg(unix)]
-	let terminate = async {
-		signal::unix::signal(signal::unix::SignalKind::terminate())
-			.expect("failed to install signal handler")
-			.recv()
-			.await;
-	};
-
-	#[cfg(not(unix))]
-	let terminate = std::future::pending::<()>();
-
-	tokio::select! {
-		() = ctrl_c => {},
-		() = terminate => {},
-	}
 }
