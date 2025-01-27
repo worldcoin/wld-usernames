@@ -1,8 +1,8 @@
-.env
 /out
 /cache
 /target
 Dockerfile
+docker-compose.yaml
 /contracts
 /dependencies
 .dockerignore
