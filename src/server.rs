@@ -5,12 +5,12 @@ use datadog_tracing::axum::{
 	shutdown_signal as dd_shutdown_signal, OtelAxumLayer, OtelInResponseLayer,
 };
 use std::{env, net::SocketAddr, time::Duration};
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::broadcast};
 use tower_http::timeout::TimeoutLayer;
 
 use crate::{config::Config, routes};
 
-pub async fn start(mut config: Config) -> Result<()> {
+pub async fn start(mut config: Config, shutdown_tx: broadcast::Sender<()>) -> Result<()> {
 	let mut openapi = OpenApi {
 		info: openapi::Info {
 			title: "World App Username API".to_string(),
@@ -41,9 +41,16 @@ pub async fn start(mut config: Config) -> Result<()> {
 
 	tracing::info!("Starting server on {addr}...");
 
-	axum::serve(listener, router.into_make_service())
-		.with_graceful_shutdown(dd_shutdown_signal())
-		.await?;
+	// Use the same shutdown signal for both the server and worker
+	let server =
+		axum::serve(listener, router.into_make_service()).with_graceful_shutdown(async move {
+			dd_shutdown_signal().await;
+			// When server receives shutdown signal, propagate it to the worker
+			let _ = shutdown_tx.send(());
+		});
+
+	// Run the server and wait for it to complete
+	server.await?;
 
 	Ok(())
 }

@@ -1,4 +1,4 @@
 pub mod data_deletion_worker;
-mod deletion_completion_queue;
-mod deletion_request_queue;
-mod error;
+pub mod deletion_completion_queue;
+pub mod deletion_request_queue;
+pub mod error;

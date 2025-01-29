@@ -54,7 +54,7 @@ pub struct QueueMessage {
 }
 
 #[async_trait]
-pub trait DeletionRequestQueue {
+pub trait DeletionRequestQueue: Send + Sync {
 	async fn poll_messages(&self) -> Result<Vec<QueueMessage>, QueueError>;
 	async fn acknowledge(&self, receipt_handle: &str) -> Result<(), QueueError>;
 }

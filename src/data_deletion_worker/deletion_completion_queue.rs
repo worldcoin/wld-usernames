@@ -38,7 +38,7 @@ where
 }
 
 #[async_trait]
-pub trait DeletionCompletionQueue {
+pub trait DeletionCompletionQueue: Send + Sync {
 	async fn send_data_deletion_completion_message(
 		&self,
 		completion: DataDeletionCompletion,
