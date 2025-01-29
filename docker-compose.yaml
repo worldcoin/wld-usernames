@@ -20,6 +20,22 @@ services:
     ports:
       - "6379:6379"
 
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566" # LocalStack Gateway
+      - "4510-4559:4510-4559" # external services port range
+    environment:
+      - SERVICES=sqs,s3
+      - DEBUG=${DEBUG-}
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=local
+      - AWS_SECRET_ACCESS_KEY=local
+    volumes:
+      - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+
   dynamodb:
     image: amazon/dynamodb-local
     ports:
@@ -37,4 +53,3 @@ services:
     ports:
       - "8125:8125/udp"
       - "8126:8126"
-
