@@ -1,5 +1,4 @@
 use anyhow::Result;
-use sqlx::PgPool;
 use tokio::{
 	sync::broadcast,
 	time::{sleep, Duration},
@@ -9,12 +8,13 @@ use tracing::{error, info};
 use super::{
 	deletion_completion_queue::DeletionCompletionQueue,
 	deletion_request_queue::DeletionRequestQueue,
+	username_deletion_service::UsernameDeletionService,
 };
 
 pub struct DataDeletionWorker {
 	request_queue: Box<dyn DeletionRequestQueue>,
 	completion_queue: Box<dyn DeletionCompletionQueue>,
-	pg_pool: PgPool,
+	deletion_service: Box<dyn UsernameDeletionService>,
 	sleep_interval: Duration,
 }
 
@@ -22,7 +22,7 @@ impl DataDeletionWorker {
 	pub fn new(
 		request_queue: Box<dyn DeletionRequestQueue>,
 		completion_queue: Box<dyn DeletionCompletionQueue>,
-		pg_pool: PgPool,
+		deletion_service: Box<dyn UsernameDeletionService>,
 	) -> Result<Self> {
 		let sleep_interval_secs = std::env::var("DELETION_WORKER_SLEEP_INTERVAL_SECS")?
 			.parse::<u64>()
@@ -31,15 +31,40 @@ impl DataDeletionWorker {
 		Ok(Self {
 			request_queue,
 			completion_queue,
-			pg_pool,
+			deletion_service,
 			sleep_interval: Duration::from_secs(sleep_interval_secs),
 		})
 	}
 
 	async fn process_deletion_requests(&self) -> Result<()> {
 		info!("Processing deletion requests...");
-		// TODO: Implement actual deletion logic here
-		sleep(Duration::from_secs(1)).await;
+
+		let messages = self.request_queue.poll_messages().await?;
+
+		for message in messages {
+			match self
+				.deletion_service
+				.delete_username(
+					&message.request.user.wallet_address,
+					message.request.correlation_id,
+				)
+				.await
+			{
+				Ok(_) => {
+					if let Err(e) = self
+						.request_queue
+						.acknowledge(&message.receipt_handle)
+						.await
+					{
+						error!("Failed to acknowledge message: {}", e);
+					}
+				},
+				Err(e) => {
+					error!("Failed to delete username: {}", e);
+				},
+			}
+		}
+
 		Ok(())
 	}
 

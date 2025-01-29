@@ -29,7 +29,7 @@ pub struct DataDeletionRequest {
 	pub version: i32,
 }
 
-fn default_version() -> i32 {
+const fn default_version() -> i32 {
 	SUPPORTED_VERSION
 }
 
@@ -40,8 +40,7 @@ where
 	let version = i32::deserialize(deserializer)?;
 	if version != SUPPORTED_VERSION {
 		return Err(serde::de::Error::custom(format!(
-			"Unsupported version: {}. Only version {} is supported",
-			version, SUPPORTED_VERSION
+			"Unsupported version: {version}. Only version {SUPPORTED_VERSION} is supported",
 		)));
 	}
 	Ok(version)
@@ -88,10 +87,7 @@ impl DeletionRequestQueueImpl {
 		})
 	}
 
-	fn format_message(
-		&self,
-		message: aws_sdk_sqs::types::Message,
-	) -> Result<QueueMessage, QueueError> {
+	fn format_message(message: aws_sdk_sqs::types::Message) -> Result<QueueMessage, QueueError> {
 		let body = message
 			.body
 			.as_ref()
@@ -102,7 +98,7 @@ impl DeletionRequestQueueImpl {
 		})?;
 
 		let request: DataDeletionRequest = serde_json::from_str(body)
-			.map_err(|e| QueueError::InvalidMessage(format!("Failed to parse message: {}", e)))?;
+			.map_err(|e| QueueError::InvalidMessage(format!("Failed to parse message: {e}")))?;
 
 		Ok(QueueMessage {
 			request,
@@ -128,7 +124,7 @@ impl DeletionRequestQueue for DeletionRequestQueueImpl {
 
 		Ok(messages
 			.into_iter()
-			.filter_map(|msg| match self.format_message(msg) {
+			.filter_map(|msg| match Self::format_message(msg) {
 				Ok(queue_msg) => Some(queue_msg),
 				Err(e) => {
 					error!("Failed to parse message: {}", e);

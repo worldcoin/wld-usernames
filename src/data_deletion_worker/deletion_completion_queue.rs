@@ -19,7 +19,7 @@ pub struct DataDeletionCompletion {
 	pub version: i32,
 }
 
-fn default_version() -> i32 {
+const fn default_version() -> i32 {
 	SUPPORTED_VERSION
 }
 
@@ -29,10 +29,9 @@ where
 {
 	let version = i32::deserialize(deserializer)?;
 	if version != SUPPORTED_VERSION {
-		return Err(serde::de::Error::custom(format!(
-			"Unsupported version: {}. Only version {} is supported",
-			version, SUPPORTED_VERSION
-		)));
+		return Err(serde::de::Error::custom(
+			"Unsupported version: {version}. Only version {SUPPORTED_VERSION} is supported",
+		));
 	}
 	Ok(version)
 }
@@ -45,6 +44,7 @@ pub trait DeletionCompletionQueue: Send + Sync {
 	) -> Result<(), QueueError>;
 }
 
+#[allow(clippy::module_name_repetitions)]
 pub struct DeletionCompletionQueueImpl {
 	sqs_client: SqsClient,
 	queue_url: String,
@@ -78,9 +78,8 @@ impl DeletionCompletionQueue for DeletionCompletionQueueImpl {
 		&self,
 		completion: DataDeletionCompletion,
 	) -> Result<(), QueueError> {
-		let message_body = serde_json::to_string(&completion).map_err(|e| {
-			QueueError::InvalidMessage(format!("Failed to serialize message: {}", e))
-		})?;
+		let message_body = serde_json::to_string(&completion)
+			.map_err(|e| QueueError::InvalidMessage(format!("Failed to serialize message: {e}")))?;
 
 		self.sqs_client
 			.send_message()

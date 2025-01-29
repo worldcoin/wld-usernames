@@ -9,12 +9,6 @@ mod types;
 mod utils;
 mod verify;
 
-use data_deletion_worker::{
-	data_deletion_worker::DataDeletionWorker,
-	deletion_completion_queue::DeletionCompletionQueueImpl,
-	deletion_request_queue::DeletionRequestQueueImpl,
-};
-use sqlx::PgPool;
 use tokio::sync::broadcast;
 
 #[tokio::main]
@@ -34,8 +28,11 @@ async fn main() -> anyhow::Result<()> {
 	config.migrate_database().await?;
 	tracing::info!("👩‍🌾 Migrations run");
 
-	// Initialize worker with write pool
-	let (worker, shutdown_tx) = init_worker(config.db_client()).await?;
+	// Create shutdown channel
+	let (shutdown_tx, _) = broadcast::channel(1);
+
+	// Initialize worker with its own database pool
+	let worker = data_deletion_worker::init_deletion_worker().await?;
 
 	// Spawn worker task
 	let worker_handle = {
@@ -60,21 +57,4 @@ fn init_crypto() {
 	rustls::crypto::ring::default_provider()
 		.install_default()
 		.expect("Error initializing crypto provider");
-}
-
-async fn init_worker(
-	db_pool: PgPool,
-) -> anyhow::Result<(DataDeletionWorker, broadcast::Sender<()>)> {
-	// Create shutdown channel
-	let (shutdown_tx, _) = broadcast::channel(1);
-
-	// Initialize worker components
-	let request_queue = DeletionRequestQueueImpl::new().await?;
-	let completion_queue = DeletionCompletionQueueImpl::new().await?;
-
-	// Initialize the worker
-	let worker =
-		DataDeletionWorker::new(Box::new(request_queue), Box::new(completion_queue), db_pool)?;
-
-	Ok((worker, shutdown_tx))
 }
