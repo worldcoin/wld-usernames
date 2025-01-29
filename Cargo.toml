@@ -20,6 +20,8 @@ dotenvy = "0.15.7"
 thiserror = "1.0.69"
 num-traits = "0.2.19"
 serde_json = "1.0.135"
+async-trait = "0.1.77"
+futures = "0.3"
 datadog-tracing = { version = "0.2.3", features = ["axum"] }
 url = { version = "2.5.4", features = ["serde"] }
 tokio = { version = "1.43.0", features = ["full"] }
@@ -54,6 +56,8 @@ redis = { version = "0.28.1", features = ["tokio-comp", "connection-manager", "t
 rustls = { version = "0.23.21", features = ["ring"] }
 aws-config = "1.5.14"
 aws-sdk-dynamodb = "1.60.0"
+aws-sdk-sqs = "1.17.0"
+uuid = { version = "1.7.0", features = ["serde", "v4"] }
 
 
 [build-dependencies]

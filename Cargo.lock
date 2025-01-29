@@ -1058,6 +1058,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-sqs"
+version = "1.56.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca6b2f438a99c189b89279ca88ed05c2bcdcfcacd7d78a821b8650166040b9b4"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "http 0.2.12",
+ "once_cell",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-sso"
 version = "1.54.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6344,13 +6366,16 @@ dependencies = [
  "aide",
  "alloy",
  "anyhow",
+ "async-trait",
  "aws-config",
  "aws-sdk-dynamodb",
+ "aws-sdk-sqs",
  "axum",
  "axum-jsonschema",
  "chrono",
  "datadog-tracing",
  "dotenvy",
+ "futures",
  "hex",
  "http 1.2.0",
  "idkit",
@@ -6371,6 +6396,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
