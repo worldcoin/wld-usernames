@@ -89,8 +89,8 @@ impl Config {
 			.await?;
 
 		let db_read_client = PgPoolOptions::new()
-			.min_connections(2)
-			.max_connections(32)
+			.min_connections(10)
+			.max_connections(128)
 			.acquire_timeout(Duration::from_secs(4))
 			.connect(
 				&env::var("DATABASE_READ_URL")
