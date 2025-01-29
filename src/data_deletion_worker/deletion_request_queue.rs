@@ -1,10 +1,12 @@
 use async_trait::async_trait;
 use aws_sdk_sqs::Client as SqsClient;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use tracing::error;
 use uuid::Uuid;
 
 use super::error::QueueError;
+
+const SUPPORTED_VERSION: i32 = 1;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserData {
@@ -23,7 +25,26 @@ pub struct DataDeletionRequest {
 	pub correlation_id: Uuid,
 	#[serde(rename = "type")]
 	pub message_type: String,
+	#[serde(default = "default_version", deserialize_with = "validate_version")]
 	pub version: i32,
+}
+
+fn default_version() -> i32 {
+	SUPPORTED_VERSION
+}
+
+fn validate_version<'de, D>(deserializer: D) -> Result<i32, D::Error>
+where
+	D: Deserializer<'de>,
+{
+	let version = i32::deserialize(deserializer)?;
+	if version != SUPPORTED_VERSION {
+		return Err(serde::de::Error::custom(format!(
+			"Unsupported version: {}. Only version {} is supported",
+			version, SUPPORTED_VERSION
+		)));
+	}
+	Ok(version)
 }
 
 #[derive(Debug)]
