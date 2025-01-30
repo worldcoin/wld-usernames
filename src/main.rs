@@ -9,6 +9,7 @@ mod types;
 mod utils;
 mod verify;
 
+use datadog_tracing::axum::shutdown_signal;
 use tokio::sync::broadcast;
 
 #[tokio::main]
@@ -42,12 +43,26 @@ async fn main() -> anyhow::Result<()> {
 		})
 	};
 
-	// Start server with shutdown sender
-	server::start(config, shutdown_tx).await?;
+	// Spawn shutdown signal task
+	let _shutdown_handle = {
+		let shutdown_tx = shutdown_tx.clone();
+		tokio::spawn(async move {
+			shutdown_signal().await;
+			let _ = shutdown_tx.send(());
+		})
+	};
 
-	// Wait for worker to finish after server shutdown
+	// Run server in main thread with shutdown receiver
+	let server_result = server::start(config, shutdown_tx.subscribe()).await;
+
+	// Wait for worker to finish
 	if let Err(e) = worker_handle.await {
 		tracing::error!("Error waiting for worker to shutdown: {}", e);
+	}
+
+	// Check server result
+	if let Err(e) = server_result {
+		tracing::error!("Server error: {}", e);
 	}
 
 	Ok(())

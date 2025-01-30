@@ -1,16 +1,14 @@
 use aide::openapi::{self, OpenApi};
 use anyhow::Result;
 use axum::Extension;
-use datadog_tracing::axum::{
-	shutdown_signal as dd_shutdown_signal, OtelAxumLayer, OtelInResponseLayer,
-};
+use datadog_tracing::axum::{OtelAxumLayer, OtelInResponseLayer};
 use std::{env, net::SocketAddr, time::Duration};
 use tokio::{net::TcpListener, sync::broadcast};
 use tower_http::timeout::TimeoutLayer;
 
 use crate::{config::Config, routes};
 
-pub async fn start(mut config: Config, shutdown_tx: broadcast::Sender<()>) -> Result<()> {
+pub async fn start(mut config: Config, mut shutdown: broadcast::Receiver<()>) -> Result<()> {
 	let mut openapi = OpenApi {
 		info: openapi::Info {
 			title: "World App Username API".to_string(),
@@ -41,16 +39,11 @@ pub async fn start(mut config: Config, shutdown_tx: broadcast::Sender<()>) -> Re
 
 	tracing::info!("Starting server on {addr}...");
 
-	// Use the same shutdown signal for both the server and worker
-	let server =
-		axum::serve(listener, router.into_make_service()).with_graceful_shutdown(async move {
-			dd_shutdown_signal().await;
-			// When server receives shutdown signal, propagate it to the worker
-			let _ = shutdown_tx.send(());
-		});
-
-	// Run the server and wait for it to complete
-	server.await?;
+	axum::serve(listener, router.into_make_service())
+		.with_graceful_shutdown(async move {
+			shutdown.recv().await.ok();
+		})
+		.await?;
 
 	Ok(())
 }
