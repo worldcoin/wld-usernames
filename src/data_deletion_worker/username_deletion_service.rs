@@ -8,6 +8,7 @@ pub trait UsernameDeletionService: Send + Sync {
 	async fn delete_username(&self, wallet_address: &str) -> Result<(), QueueError>;
 }
 
+#[allow(clippy::module_name_repetitions)]
 pub struct UsernameDeletionServiceImpl {
 	pool: PgPool,
 }

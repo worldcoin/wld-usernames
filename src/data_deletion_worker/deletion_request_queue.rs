@@ -58,6 +58,7 @@ pub trait DeletionRequestQueue: Send + Sync {
 	async fn acknowledge(&self, receipt_handle: &str) -> Result<(), QueueError>;
 }
 
+#[allow(clippy::module_name_repetitions)]
 pub struct DeletionRequestQueueImpl {
 	sqs_client: SqsClient,
 	queue_url: String,

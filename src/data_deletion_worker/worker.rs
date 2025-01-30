@@ -11,6 +11,7 @@ use super::{
 	username_deletion_service::UsernameDeletionService,
 };
 
+#[allow(clippy::module_name_repetitions)]
 pub struct DataDeletionWorker {
 	request_queue: Box<dyn DeletionRequestQueue>,
 	completion_queue: Box<dyn DeletionCompletionQueue>,
@@ -95,7 +96,7 @@ impl DataDeletionWorker {
 					info!("Shutdown signal received, stopping data deletion worker...");
 					break;
 				}
-				_ = sleep(self.sleep_interval) => {
+				() = sleep(self.sleep_interval) => {
 					if let Err(e) = self.poll_and_process_batch().await {
 						error!("Error processing deletion requests: {}", e);
 					}
