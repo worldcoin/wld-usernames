@@ -10,54 +10,15 @@ In order to use `sqlx` commands, you need to install `sqlx-cli`
 cargo install sqlx-cli
 ```
 
-For local development with SQS, you'll need:
-
-- AWS CLI
-- netcat (nc command)
-
-Install AWS CLI and configure it for LocalStack:
-
-```sh
-# macOS
-brew install awscli
-
-# Configure AWS CLI for LocalStack
-aws configure set aws_access_key_id local
-aws configure set aws_secret_access_key local
-aws configure set region us-east-1
-```
-
 ## 🚀 Running Locally
 
 ```sh
 cp .env.example .env
 docker compose up --detach
 
-# Initialize LocalStack resources
-chmod +x scripts/init-localstack.sh
-./scripts/init-localstack.sh
-
 cargo run
 
 // go to localhost:8000
-```
-
-## Testing SQS Locally
-
-You can use AWS CLI to interact with the local SQS queue:
-
-```sh
-# List queues
-aws --endpoint-url=http://localhost:4566 sqs list-queues
-
-# Send a test message
-aws --endpoint-url=http://localhost:4566 sqs send-message \
-    --queue-url http://localhost:4566/000000000000/wld-username-deletion-requests-local \
-    --message-body '{"username": "test", "action": "update"}'
-
-# Receive messages
-aws --endpoint-url=http://localhost:4566 sqs receive-message \
-    --queue-url http://localhost:4566/000000000000/wld-username-deletion-requests-local
 ```
 
 ## Updating Queries
