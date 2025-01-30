@@ -129,11 +129,6 @@ impl Config {
 		sqlx::migrate!().run(self.db_client.as_ref().unwrap()).await
 	}
 
-	// DB client with write access
-	pub fn db_client(&mut self) -> PgPool {
-		self.db_client.take().unwrap()
-	}
-
 	pub fn db_extension(&mut self) -> Extension<Db> {
 		Extension(Db {
 			read_only: self.db_read_client.take().unwrap(),
