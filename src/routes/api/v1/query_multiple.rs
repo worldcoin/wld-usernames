@@ -1,12 +1,12 @@
 use axum::Extension;
 use axum_jsonschema::Json;
+use tracing::{instrument, Span};
 
 use crate::{
 	config::Db,
 	types::{ErrorResponse, Name, QueryAddressesPayload, UsernameRecord},
 };
 
-#[tracing::instrument(skip_all)]
 pub async fn query_multiple(
 	Extension(db): Extension<Db>,
 	Json(payload): Json<QueryAddressesPayload>,
@@ -17,13 +17,9 @@ pub async fn query_multiple(
 		.map(|a| a.0.to_checksum(None))
 		.collect::<Vec<_>>();
 
-	let names = sqlx::query_as!(
-		Name,
-		"SELECT * FROM names WHERE address = ANY($1)",
-		&addresses
-	)
-	.fetch_all(&db.read_only)
-	.await?;
+	Span::current().record("address_count", addresses.len());
+
+	let names = query_multiple_db_query(addresses, &db).await?;
 
 	let records_json: Vec<UsernameRecord> = names.into_iter().map(UsernameRecord::from).collect();
 
@@ -35,4 +31,18 @@ pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::Transfo
 		.response_with::<422, ErrorResponse, _>(|op| {
 			op.description("There were too many addresses")
 		})
+}
+
+#[instrument(skip_all)]
+pub async fn query_multiple_db_query(
+	addresses: Vec<String>,
+	db: &Db,
+) -> Result<Vec<Name>, ErrorResponse> {
+	Ok(sqlx::query_as!(
+		Name,
+		"SELECT * FROM names WHERE address = ANY($1)",
+		&addresses
+	)
+	.fetch_all(&db.read_only)
+	.await?)
 }
