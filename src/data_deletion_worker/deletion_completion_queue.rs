@@ -7,6 +7,7 @@ use uuid::Uuid;
 use super::error::QueueError;
 
 const SUPPORTED_VERSION: i32 = 1;
+const SERVICE: &str = "wld-usernames";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DataDeletionCompletion {
@@ -17,6 +18,17 @@ pub struct DataDeletionCompletion {
 	pub completed_at: DateTime<Utc>,
 	#[serde(default = "default_version", deserialize_with = "validate_version")]
 	pub version: i32,
+}
+
+impl DataDeletionCompletion {
+	pub fn new(correlation_id: Uuid) -> Self {
+		Self {
+			correlation_id,
+			service: SERVICE.to_string(),
+			completed_at: Utc::now(),
+			version: SUPPORTED_VERSION,
+		}
+	}
 }
 
 const fn default_version() -> i32 {
@@ -38,10 +50,7 @@ where
 
 #[async_trait]
 pub trait DeletionCompletionQueue: Send + Sync {
-	async fn send_data_deletion_completion_message(
-		&self,
-		completion: DataDeletionCompletion,
-	) -> Result<(), QueueError>;
+	async fn send_message(&self, completion: DataDeletionCompletion) -> Result<(), QueueError>;
 }
 
 #[allow(clippy::module_name_repetitions)]
@@ -74,10 +83,7 @@ impl DeletionCompletionQueueImpl {
 
 #[async_trait]
 impl DeletionCompletionQueue for DeletionCompletionQueueImpl {
-	async fn send_data_deletion_completion_message(
-		&self,
-		completion: DataDeletionCompletion,
-	) -> Result<(), QueueError> {
+	async fn send_message(&self, completion: DataDeletionCompletion) -> Result<(), QueueError> {
 		let message_body = serde_json::to_string(&completion)
 			.map_err(|e| QueueError::InvalidMessage(format!("Failed to serialize message: {e}")))?;
 

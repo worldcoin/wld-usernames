@@ -24,7 +24,7 @@ async fn main() -> anyhow::Result<()> {
 	// required for tls support
 	init_crypto();
 
-	let mut config = config::Config::from_env().await?;
+	let config = config::Config::from_env().await?;
 	config.migrate_database().await?;
 	tracing::info!("👩‍🌾 Migrations run");
 

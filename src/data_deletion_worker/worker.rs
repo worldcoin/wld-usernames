@@ -6,8 +6,8 @@ use tokio::{
 use tracing::{error, info};
 
 use super::{
-	deletion_completion_queue::DeletionCompletionQueue,
-	deletion_request_queue::DeletionRequestQueue,
+	deletion_completion_queue::{DataDeletionCompletion, DeletionCompletionQueue},
+	deletion_request_queue::{DeletionRequestQueue, QueueMessage},
 	username_deletion_service::UsernameDeletionService,
 };
 
@@ -36,31 +36,44 @@ impl DataDeletionWorker {
 		})
 	}
 
-	async fn process_deletion_requests(&self) -> Result<()> {
+	async fn handle_single_deletion(&self, deletion_request: QueueMessage) -> Result<()> {
+		let message = deletion_request.request;
+
+		self.deletion_service
+			.delete_username(&message.user.wallet_address)
+			.await?;
+
+		let completion_message = DataDeletionCompletion::new(message.correlation_id);
+
+		self.completion_queue
+			.send_message(completion_message)
+			.await?;
+
+		self.request_queue
+			.acknowledge(&deletion_request.receipt_handle)
+			.await?;
+
+		Ok(())
+	}
+
+	async fn poll_and_process_batch(&self) -> Result<()> {
 		info!("Processing deletion requests...");
 
-		let messages = self.request_queue.poll_messages().await?;
+		let deletion_requests = self.request_queue.poll_messages().await?;
 
-		for message in messages {
-			match self
-				.deletion_service
-				.delete_username(
-					&message.request.user.wallet_address,
-					message.request.correlation_id,
-				)
-				.await
-			{
-				Ok(_) => {
-					if let Err(e) = self
-						.request_queue
-						.acknowledge(&message.receipt_handle)
-						.await
-					{
-						error!("Failed to acknowledge message: {}", e);
-					}
+		for deletion_request in deletion_requests {
+			let correlation_id = deletion_request.request.correlation_id;
+			match self.handle_single_deletion(deletion_request).await {
+				Ok(()) => {
+					info!(correlation_id = %correlation_id, "Deleted username successfully for {correlation_id}");
 				},
 				Err(e) => {
-					error!("Failed to delete username: {}", e);
+					error!(
+						correlation_id = %correlation_id,
+						error = %e,
+						error.kind = "username_deletion_failed",
+						"Failed to delete username for {correlation_id}"
+					);
 				},
 			}
 		}
@@ -75,18 +88,15 @@ impl DataDeletionWorker {
 		);
 
 		loop {
-			/**
-			 * Select between the shutdown signal and the sleep interval
-			 * If the shutdown signal is received, break the loop
-			 * If the sleep interval is reached, process the deletion requests
-			 */
+			sleep(self.sleep_interval).await;
+
 			tokio::select! {
 				_ = shutdown.recv() => {
 					info!("Shutdown signal received, stopping data deletion worker...");
 					break;
 				}
 				_ = sleep(self.sleep_interval) => {
-					if let Err(e) = self.process_deletion_requests().await {
+					if let Err(e) = self.poll_and_process_batch().await {
 						error!("Error processing deletion requests: {}", e);
 					}
 				}
