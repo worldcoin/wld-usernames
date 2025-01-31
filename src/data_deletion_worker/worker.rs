@@ -3,7 +3,7 @@ use tokio::{
 	sync::broadcast,
 	time::{sleep, Duration},
 };
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use super::{
 	deletion_completion_queue::{DataDeletionCompletion, DeletionCompletionQueue},
@@ -40,19 +40,9 @@ impl DataDeletionWorker {
 	async fn handle_single_deletion(&self, deletion_request: QueueMessage) -> Result<()> {
 		let message = deletion_request.request;
 
-		debug!(
-			"Deleting username for {correlation_id}",
-			correlation_id = message.correlation_id
-		);
-
 		self.deletion_service
 			.delete_username(&message.user.wallet_address)
 			.await?;
-
-		debug!(
-			"Username deleted for {correlation_id}",
-			correlation_id = message.correlation_id
-		);
 
 		let completion_message = DataDeletionCompletion::new(message.correlation_id);
 
@@ -60,19 +50,9 @@ impl DataDeletionWorker {
 			.send_message(completion_message)
 			.await?;
 
-		debug!(
-			"Completion message sent for {correlation_id}",
-			correlation_id = message.correlation_id
-		);
-
 		self.request_queue
 			.acknowledge(&deletion_request.receipt_handle)
 			.await?;
-
-		debug!(
-			"Request message acknowledged for {correlation_id}",
-			correlation_id = message.correlation_id
-		);
 
 		Ok(())
 	}
