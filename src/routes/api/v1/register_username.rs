@@ -2,6 +2,7 @@ use axum::Extension;
 use axum_jsonschema::Json;
 use http::StatusCode;
 use idkit::session::VerificationLevel;
+use tracing::{info_span, Instrument};
 
 use crate::{
 	blocklist::BlocklistExt,
@@ -76,6 +77,10 @@ pub async fn register_username(
 			&payload.nullifier_hash
 		)
 		.fetch_one(&db.read_write)
+		.instrument(info_span!(
+			"register_username_uniqueness_check",
+			username = payload.username,
+		))
 		.await?;
 
 	if uniqueness_check.username.unwrap_or_default() {
@@ -96,13 +101,17 @@ pub async fn register_username(
 	}
 
 	Name::new(
-		payload.username,
+		payload.username.clone(),
 		&payload.address,
 		payload.profile_picture_url,
 		payload.nullifier_hash,
 		&payload.verification_level,
 	)
 	.insert(&db.read_write, "names")
+	.instrument(info_span!(
+		"register_username_insert",
+		username = payload.username,
+	))
 	.await?;
 
 	Ok(StatusCode::CREATED)

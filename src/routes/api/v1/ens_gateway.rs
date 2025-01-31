@@ -11,6 +11,7 @@ use axum_jsonschema::Json;
 use chrono::{TimeDelta, Utc};
 use serde_json::from_slice;
 use std::{str::FromStr, sync::Arc};
+use tracing::{info_span, Instrument};
 
 use crate::{
 	config::{Config, ConfigExt, Db},
@@ -65,6 +66,7 @@ async fn process_ens_request(
 
 	let record = sqlx::query_as!(Name, "SELECT * FROM names WHERE username = $1", username)
 		.fetch_one(&db.read_only)
+		.instrument(info_span!("ens_gateway_query_name", username = username))
 		.await
 		.map_err(|_| ENSErrorResponse::new("Name not found."))?;
 

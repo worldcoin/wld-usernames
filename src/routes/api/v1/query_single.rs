@@ -8,6 +8,7 @@ use axum::{
 };
 use axum_jsonschema::Json;
 use redis::{aio::ConnectionManager, AsyncCommands};
+use tracing::{info_span, Instrument};
 
 use crate::{
 	config::Db,
@@ -59,6 +60,7 @@ pub async fn query_single(
 		validated_input
 	)
 	.fetch_optional(&db.read_only)
+	.instrument(info_span!("query_single_db_query", input = validated_input))
 	.await?
 	{
 		let record = UsernameRecord::from(name);
@@ -77,6 +79,10 @@ pub async fn query_single(
 		name_or_address
 	)
 	.fetch_optional(&db.read_only)
+	.instrument(info_span!(
+		"query_single_moved_db_query",
+		username = name_or_address
+	))
 	.await?
 	{
 		return Ok(Redirect::permanent(&format!("/api/v1/{}", moved.new_username)).into_response());

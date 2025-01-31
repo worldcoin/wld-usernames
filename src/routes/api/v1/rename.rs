@@ -2,6 +2,7 @@ use axum::Extension;
 use axum_jsonschema::Json;
 use http::StatusCode;
 use idkit::session::VerificationLevel;
+use tracing::{info_span, Instrument};
 
 use crate::{
 	blocklist::BlocklistExt,
@@ -27,6 +28,10 @@ pub async fn rename(
 		&payload.old_username
 	)
 	.fetch_optional(&db.read_write)
+	.instrument(info_span!(
+		"rename_check_existing",
+		username = payload.old_username
+	))
 	.await?
 	else {
 		return Err(ErrorResponse::not_found("Username not found".to_string()));
@@ -100,6 +105,11 @@ pub async fn rename(
 		&payload.new_username,
 	)
 	.fetch_one(&db.read_write)
+	.instrument(info_span!(
+		"rename_uniqueness_check",
+		old_username = payload.old_username,
+		new_username = payload.new_username
+	))
 	.await?;
 
 	if uniqueness_check.username.unwrap_or_default() {
@@ -117,6 +127,10 @@ pub async fn rename(
 			&payload.old_username
 		)
 		.execute(&mut *tx)
+		.instrument(info_span!(
+			"rename_delete_old_name",
+			username = payload.old_username
+		))
 		.await?;
 	}
 
@@ -127,6 +141,11 @@ pub async fn rename(
 		&payload.old_username,
 	)
 	.fetch_one(&mut *tx)
+	.instrument(info_span!(
+		"rename_update_name",
+		old_username = payload.old_username,
+		new_username = payload.new_username
+	))
 	.await?;
 
 	sqlx::query!(
@@ -135,6 +154,11 @@ pub async fn rename(
 		&payload.new_username,
 	)
 	.execute(&mut *tx)
+	.instrument(info_span!(
+		"rename_insert_old_name",
+		old_username = payload.old_username,
+		new_username = payload.new_username
+	))
 	.await?;
 
 	tx.commit().await?;
