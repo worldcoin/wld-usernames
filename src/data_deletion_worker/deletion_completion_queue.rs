@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use aws_sdk_sqs::Client as SqsClient;
+use aws_config::{BehaviorVersion, Region};
+use aws_sdk_sqs::{config::Credentials, Client as SqsClient, Config};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
@@ -61,9 +62,27 @@ pub struct DeletionCompletionQueueImpl {
 
 impl DeletionCompletionQueueImpl {
 	async fn init_sqs_client() -> Result<(SqsClient, String), Box<dyn std::error::Error>> {
-		let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-		let sqs_client = SqsClient::new(&aws_config);
-
+		let sqs_client = if std::env::var("ENV").unwrap_or_default() == "local" {
+			let aws_config = Config::builder()
+				.region(Region::new(
+					std::env::var("AWS_REGION").expect("AWS_REGION is not set"),
+				))
+				.credentials_provider(Credentials::new(
+					std::env::var("AWS_ACCESS_KEY_ID").expect("AWS_ACCESS_KEY_ID is not set"),
+					std::env::var("AWS_SECRET_ACCESS_KEY")
+						.expect("AWS_SECRET_ACCESS_KEY is not set"),
+					None,
+					None,
+					"static",
+				))
+				.endpoint_url(std::env::var("AWS_ENDPOINT").expect("AWS_ENDPOINT is not set"))
+				.behavior_version(BehaviorVersion::latest())
+				.build();
+			SqsClient::from_conf(aws_config)
+		} else {
+			let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+			SqsClient::new(&aws_config)
+		};
 		let queue_url = std::env::var("SQS_DELETION_COMPLETION_QUEUE_URL")?;
 
 		Ok((sqs_client, queue_url))

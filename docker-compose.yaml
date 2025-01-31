@@ -23,6 +23,9 @@ services:
   localstack:
     image: localstack/localstack:latest
     container_name: localstack
+    env_file:
+      - path: ./.env
+        required: true
     ports:
       - "4566:4566"
     volumes:
