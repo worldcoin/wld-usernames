@@ -40,19 +40,26 @@ impl DataDeletionWorker {
 	async fn handle_single_deletion(&self, deletion_request: QueueMessage) -> Result<()> {
 		let message = deletion_request.request;
 
+		info!(correlation_id = %message.correlation_id, "Deleting username");
+
 		self.deletion_service
 			.delete_username(&message.user.wallet_address)
 			.await?;
 
-		let completion_message = DataDeletionCompletion::new(message.correlation_id);
+		info!(correlation_id = %message.correlation_id, "Deleted username");
 
+		let completion_message = DataDeletionCompletion::new(message.correlation_id);
 		self.completion_queue
 			.send_message(completion_message)
 			.await?;
 
+		info!(correlation_id = %message.correlation_id, "Sent completion message");
+
 		self.request_queue
 			.acknowledge(&deletion_request.receipt_handle)
 			.await?;
+
+		info!(correlation_id = %message.correlation_id, "Acknowledged deletion request");
 
 		Ok(())
 	}

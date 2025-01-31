@@ -35,6 +35,7 @@ async fn main() -> anyhow::Result<()> {
 
 	// Initialize worker only in staging environment
 	let worker_handle = if env::var("ENV").unwrap_or_default() == "staging" {
+		tracing::info!("👩‍🌾 Worker initialized");
 		// Initialize worker with its own database pool
 		let worker = data_deletion_worker::init_deletion_worker().await?;
 
@@ -44,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
 			worker.run(worker_shutdown_rx).await;
 		}))
 	} else {
+		tracing::info!("👩‍🌾 Worker not initialized");
 		None
 	};
 
