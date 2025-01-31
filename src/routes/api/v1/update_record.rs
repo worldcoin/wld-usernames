@@ -1,6 +1,7 @@
 use axum::{extract::Path, Extension};
 use axum_jsonschema::Json;
 use http::StatusCode;
+use tracing::{info_span, Instrument};
 
 use crate::{
 	config::{ConfigExt, Db},
@@ -17,6 +18,10 @@ pub async fn update_record(
 ) -> Result<StatusCode, ErrorResponse> {
 	let Some(record) = sqlx::query_as!(Name, "SELECT * FROM names WHERE username = $1", username)
 		.fetch_optional(&db.read_write)
+		.instrument(info_span!(
+			"update_record_check_existing",
+			username = username
+		))
 		.await?
 	else {
 		return Err(ErrorResponse::not_found("Username not found".to_string()));
@@ -76,6 +81,7 @@ pub async fn update_record(
 		username
 	)
 	.execute(&db.read_write)
+	.instrument(info_span!("update_record_update", username = username))
 	.await?;
 
 	Ok(StatusCode::OK)

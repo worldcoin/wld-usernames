@@ -10,8 +10,8 @@ use axum::{
 };
 use axum_jsonschema::Json;
 use redis::{aio::ConnectionManager, AsyncCommands};
+use tracing::{info_span, Instrument};
 
-#[tracing::instrument(skip_all)]
 pub async fn search(
 	Extension(db): Extension<Db>,
 	Extension(mut redis): Extension<ConnectionManager>,
@@ -36,13 +36,14 @@ pub async fn search(
 		"SELECT username,
 			address,
 			profile_picture_url
-		FROM names
-		WHERE username % $1
-		ORDER BY username <-> $1
-		LIMIT 10;",
+			FROM names
+			WHERE username % $1
+			ORDER BY username <-> $1
+			LIMIT 10;",
 		lowercase_username
 	)
 	.fetch_all(&db.read_only)
+	.instrument(info_span!("search_db_query", username = lowercase_username))
 	.await?;
 
 	let records: Vec<UsernameRecord> = names.into_iter().map(UsernameRecord::from).collect();

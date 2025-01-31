@@ -1,12 +1,12 @@
 use axum::Extension;
 use axum_jsonschema::Json;
+use tracing::{info_span, Instrument};
 
 use crate::{
 	config::Db,
 	types::{ErrorResponse, Name, QueryAddressesPayload, UsernameRecord},
 };
 
-#[tracing::instrument(skip_all)]
 pub async fn query_multiple(
 	Extension(db): Extension<Db>,
 	Json(payload): Json<QueryAddressesPayload>,
@@ -23,6 +23,10 @@ pub async fn query_multiple(
 		&addresses
 	)
 	.fetch_all(&db.read_only)
+	.instrument(info_span!(
+		"query_multiple_db_query",
+		addresses = addresses.len()
+	))
 	.await?;
 
 	let records_json: Vec<UsernameRecord> = names.into_iter().map(UsernameRecord::from).collect();
