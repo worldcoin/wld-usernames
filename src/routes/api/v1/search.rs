@@ -10,7 +10,7 @@ use axum::{
 };
 use axum_jsonschema::Json;
 use redis::{aio::ConnectionManager, AsyncCommands};
-use tracing::instrument;
+use tracing::{info_span, Instrument};
 
 pub async fn search(
 	Extension(db): Extension<Db>,
@@ -31,7 +31,20 @@ pub async fn search(
 		}
 	}
 
-	let names = search_db_query(lowercase_username, &db).await?;
+	let names = sqlx::query_as!(
+		NameSearch,
+		"SELECT username,
+			address,
+			profile_picture_url
+			FROM names
+			WHERE username % $1
+			ORDER BY username <-> $1
+			LIMIT 10;",
+		lowercase_username
+	)
+	.fetch_all(&db.read_only)
+	.instrument(info_span!("search_db_query", username = lowercase_username))
+	.await?;
 
 	let records: Vec<UsernameRecord> = names.into_iter().map(UsernameRecord::from).collect();
 
@@ -47,21 +60,4 @@ pub async fn search(
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
 	op.description("Search for up to 10 usernames. Accepts 1 to 14, only valid username characters to search with.")
 		.response::<200, Json<Vec<UsernameRecord>>>()
-}
-
-#[instrument(skip_all)]
-pub async fn search_db_query(username: String, db: &Db) -> Result<Vec<NameSearch>, ErrorResponse> {
-	Ok(sqlx::query_as!(
-		NameSearch,
-		"SELECT username,
-			address,
-			profile_picture_url
-		FROM names
-		WHERE username % $1
-		ORDER BY username <-> $1
-		LIMIT 10;",
-		username
-	)
-	.fetch_all(&db.read_only)
-	.await?)
 }
