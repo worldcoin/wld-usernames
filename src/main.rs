@@ -10,6 +10,7 @@ mod utils;
 mod verify;
 
 use datadog_tracing::axum::shutdown_signal;
+use std::env;
 use tokio::sync::broadcast;
 
 #[tokio::main]
@@ -32,15 +33,18 @@ async fn main() -> anyhow::Result<()> {
 	// Create shutdown channel
 	let (shutdown_tx, _) = broadcast::channel(1);
 
-	// Initialize worker with its own database pool
-	let worker = data_deletion_worker::init_deletion_worker().await?;
+	// Initialize worker only in staging environment
+	let worker_handle = if env::var("ENV").unwrap_or_default() == "staging" {
+		// Initialize worker with its own database pool
+		let worker = data_deletion_worker::init_deletion_worker().await?;
 
-	// Spawn worker task
-	let worker_handle = {
+		// Spawn worker task
 		let worker_shutdown_rx = shutdown_tx.subscribe();
-		tokio::spawn(async move {
+		Some(tokio::spawn(async move {
 			worker.run(worker_shutdown_rx).await;
-		})
+		}))
+	} else {
+		None
 	};
 
 	// Spawn shutdown signal task
@@ -55,9 +59,11 @@ async fn main() -> anyhow::Result<()> {
 	// Run server in main thread with shutdown receiver
 	let server_result = server::start(config, shutdown_tx.subscribe()).await;
 
-	// Wait for worker to finish
-	if let Err(e) = worker_handle.await {
-		tracing::error!("Error waiting for worker to shutdown: {}", e);
+	// Wait for worker to finish if it was spawned
+	if let Some(handle) = worker_handle {
+		if let Err(e) = handle.await {
+			tracing::error!("Error waiting for worker to shutdown: {}", e);
+		}
 	}
 
 	// Check server result
