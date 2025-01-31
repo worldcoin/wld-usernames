@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
 	let (shutdown_tx, _) = broadcast::channel(1);
 
 	// Initialize worker only in staging environment
-	let worker_handle = if env::var("ENV").unwrap_or_default() == "staging" {
+	let worker_handle = if env::var("ENABLE_DATA_DELETION_WORKER").unwrap_or_default() == "true" {
 		tracing::info!("👩‍🌾 Worker initialized");
 		// Initialize worker with its own database pool
 		let worker = data_deletion_worker::init_deletion_worker().await?;
