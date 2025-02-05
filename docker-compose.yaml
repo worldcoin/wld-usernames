@@ -20,6 +20,17 @@ services:
     ports:
       - "6379:6379"
 
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    env_file:
+      - path: ./.env
+        required: true
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./localstack/init.sh:/etc/localstack/init/ready.d/script.sh
+
   dynamodb:
     image: amazon/dynamodb-local
     ports:
@@ -37,4 +48,3 @@ services:
     ports:
       - "8125:8125/udp"
       - "8126:8126"
-

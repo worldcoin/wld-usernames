@@ -1,16 +1,14 @@
 use aide::openapi::{self, OpenApi};
 use anyhow::Result;
 use axum::Extension;
-use datadog_tracing::axum::{
-	shutdown_signal as dd_shutdown_signal, OtelAxumLayer, OtelInResponseLayer,
-};
+use datadog_tracing::axum::{OtelAxumLayer, OtelInResponseLayer};
 use std::{env, net::SocketAddr, time::Duration};
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::broadcast};
 use tower_http::timeout::TimeoutLayer;
 
 use crate::{config::Config, routes};
 
-pub async fn start(mut config: Config) -> Result<()> {
+pub async fn start(mut config: Config, mut shutdown: broadcast::Receiver<()>) -> Result<()> {
 	let mut openapi = OpenApi {
 		info: openapi::Info {
 			title: "World App Username API".to_string(),
@@ -42,7 +40,9 @@ pub async fn start(mut config: Config) -> Result<()> {
 	tracing::info!("Starting server on {addr}...");
 
 	axum::serve(listener, router.into_make_service())
-		.with_graceful_shutdown(dd_shutdown_signal())
+		.with_graceful_shutdown(async move {
+			shutdown.recv().await.ok();
+		})
 		.await?;
 
 	Ok(())
