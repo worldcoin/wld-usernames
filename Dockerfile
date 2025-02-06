@@ -1,5 +1,5 @@
 # ---- Builder Stage ----
-FROM --platform=linux/amd64 rust:1.81 AS builder
+FROM --platform=linux/amd64 public.ecr.aws/docker/library/rust:1.81 AS builder
 
 # Install additional build dependencies required by aws-lc-sys
 RUN apt-get update && \
@@ -26,7 +26,7 @@ COPY . .
 RUN cargo build --release --bin wld-usernames
 
 # ---- Runtime Stage ----
-FROM --platform=linux/amd64 debian:bookworm-slim AS runtime
+FROM --platform=linux/amd64 public.ecr.aws/docker/library/debian:bookworm-slim AS runtime
 
 # Install runtime dependencies (CA certificates and libssl3 for OpenSSL 3)
 RUN apt-get update && \
