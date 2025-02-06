@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use sqlx::PgPool;
+use tracing::instrument;
 
 use super::error::QueueError;
 
@@ -21,6 +22,7 @@ impl UsernameDeletionServiceImpl {
 
 #[async_trait]
 impl UsernameDeletionService for UsernameDeletionServiceImpl {
+	#[instrument(skip(self), err)]
 	async fn delete_username(&self, wallet_address: &str) -> Result<(), QueueError> {
 		sqlx::query!("DELETE FROM names WHERE address = $1", wallet_address)
 			.execute(&self.pool)

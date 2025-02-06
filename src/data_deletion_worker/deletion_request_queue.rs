@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_sqs::{config::Credentials, Client as SqsClient, Config};
 use serde::{Deserialize, Deserializer, Serialize};
-use tracing::error;
+use tracing::{error, instrument};
 use uuid::Uuid;
 
 use super::error::QueueError;
@@ -155,6 +155,7 @@ impl DeletionRequestQueue for DeletionRequestQueueImpl {
 			.collect())
 	}
 
+	#[instrument(skip(self), err)]
 	async fn acknowledge(&self, receipt_handle: &str) -> Result<(), QueueError> {
 		self.sqs_client
 			.delete_message()
