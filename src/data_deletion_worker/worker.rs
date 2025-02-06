@@ -3,7 +3,7 @@ use tokio::{
 	sync::broadcast,
 	time::{sleep, Duration},
 };
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 use super::{
 	deletion_completion_queue::{DataDeletionCompletion, DeletionCompletionQueue},
@@ -37,6 +37,7 @@ impl DataDeletionWorker {
 		})
 	}
 
+	#[instrument(skip(self), err)]
 	async fn handle_single_deletion(&self, deletion_request: QueueMessage) -> Result<()> {
 		let message = deletion_request.request;
 

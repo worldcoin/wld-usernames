@@ -3,6 +3,7 @@ use aws_config::{BehaviorVersion, Region};
 use aws_sdk_sqs::{config::Credentials, Client as SqsClient, Config};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
+use tracing::instrument;
 use uuid::Uuid;
 
 use super::error::QueueError;
@@ -102,6 +103,7 @@ impl DeletionCompletionQueueImpl {
 
 #[async_trait]
 impl DeletionCompletionQueue for DeletionCompletionQueueImpl {
+	#[instrument(skip(self), err)]
 	async fn send_message(&self, completion: DataDeletionCompletion) -> Result<(), QueueError> {
 		let message_body = serde_json::to_string(&completion)
 			.map_err(|e| QueueError::InvalidMessage(format!("Failed to serialize message: {e}")))?;
