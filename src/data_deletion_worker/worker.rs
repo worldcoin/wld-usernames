@@ -40,6 +40,12 @@ impl DataDeletionWorker {
 	async fn handle_single_deletion(&self, deletion_request: QueueMessage) -> Result<()> {
 		let message = deletion_request.request;
 
+		info!(
+			correlation_id = %message.correlation_id,
+			"Received deletion request {:?}",
+			message
+		);
+
 		info!(correlation_id = %message.correlation_id, "Deleting username");
 
 		self.deletion_service
