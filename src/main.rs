@@ -23,6 +23,14 @@ async fn main() -> anyhow::Result<()> {
 
 	tracing::info!("👩 Server started");
 
+	// required for tls support
+	init_crypto();
+
+	let config = config::Config::from_env().await?;
+	config.migrate_database().await?;
+	tracing::info!("👩‍🌾 Migrations run");
+
+	// Create shutdown channel
 	let (shutdown_tx, _) = broadcast::channel(1);
 
 	// Initialize worker only in staging environment
@@ -46,14 +54,6 @@ async fn main() -> anyhow::Result<()> {
 		None
 	};
 
-	// required for tls support
-	init_crypto();
-
-	let config = config::Config::from_env().await?;
-	config.migrate_database().await?;
-	tracing::info!("👩‍🌾 Migrations run");
-
-	// Create shutdown channel
 	// Spawn shutdown signal task
 	let _shutdown_handle = {
 		let shutdown_tx = shutdown_tx.clone();
