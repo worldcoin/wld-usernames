@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_sqs::{config::Credentials, Client as SqsClient, Config};
 use serde::{Deserialize, Deserializer, Serialize};
-use tracing::{error, instrument};
+use tracing::{instrument, warn};
 use uuid::Uuid;
 
 use super::error::QueueError;
@@ -145,10 +145,10 @@ impl DeletionRequestQueue for DeletionRequestQueueImpl {
 
 		Ok(messages
 			.into_iter()
-			.filter_map(|msg| match Self::format_message(msg) {
+			.filter_map(|msg| match Self::format_message(msg.clone()) {
 				Ok(queue_msg) => Some(queue_msg),
 				Err(e) => {
-					error!("Failed to parse message: {}", e);
+					warn!("Failed to parse message: {} - {:?}", e, msg);
 					None
 				},
 			})
