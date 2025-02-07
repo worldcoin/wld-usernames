@@ -37,13 +37,18 @@ async fn main() -> anyhow::Result<()> {
 	let worker_handle = if env::var("ENABLE_DATA_DELETION_WORKER").unwrap_or_default() == "true" {
 		tracing::info!("👩‍🌾 Worker initialized");
 		// Initialize worker with its own database pool
-		let worker = data_deletion_worker::init_deletion_worker().await?;
-
-		// Spawn worker task
-		let worker_shutdown_rx = shutdown_tx.subscribe();
-		Some(tokio::spawn(async move {
-			worker.run(worker_shutdown_rx).await;
-		}))
+		match data_deletion_worker::init_deletion_worker().await {
+			Ok(worker) => {
+				let worker_shutdown_rx = shutdown_tx.subscribe();
+				Some(tokio::spawn(async move {
+					worker.run(worker_shutdown_rx).await;
+				}))
+			},
+			Err(e) => {
+				tracing::error!("❌ Error initializing worker: {}", e);
+				None
+			},
+		}
 	} else {
 		tracing::info!("👩‍🌾 Worker not initialized");
 		None
