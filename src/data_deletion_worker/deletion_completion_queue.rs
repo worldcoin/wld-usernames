@@ -63,6 +63,8 @@ pub struct DeletionCompletionQueueImpl {
 
 impl DeletionCompletionQueueImpl {
 	async fn init_sqs_client() -> Result<(SqsClient, String), Box<dyn std::error::Error>> {
+		let queue_url = std::env::var("SQS_DELETION_COMPLETION_QUEUE_URL")?;
+
 		let sqs_client = if std::env::var("ENV").unwrap_or_default() == "local" {
 			let aws_config = Config::builder()
 				.region(Region::new(
@@ -81,10 +83,21 @@ impl DeletionCompletionQueueImpl {
 				.build();
 			SqsClient::from_conf(aws_config)
 		} else {
-			let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+			/*
+			 * Extract the region from the queue URL
+			 * https://sqs.us-east-1.amazonaws.com/123456789012/my-queue
+			 * -> us-east-1
+			 * Workaround because queue is in different region
+			 */
+			let region = queue_url.split('.').nth(1).ok_or(QueueError::InitError(
+				"Failed to extract region from queue URL".to_string(),
+			))?;
+			let aws_config = aws_config::defaults(BehaviorVersion::latest())
+				.region(Region::new(region.to_string()))
+				.load()
+				.await;
 			SqsClient::new(&aws_config)
 		};
-		let queue_url = std::env::var("SQS_DELETION_COMPLETION_QUEUE_URL")?;
 
 		Ok((sqs_client, queue_url))
 	}
