@@ -88,7 +88,7 @@ REQUEST_PAYLOAD='{
     "walletAddress": "'$TEST_ADDRESS'"
   },
   "correlationId": "'$CORRELATION_ID'",
-  "type": "data_deletion",
+  "deletionType": "data_deletion",
   "version": 1
 }'
 

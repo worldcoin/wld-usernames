@@ -24,7 +24,7 @@ pub struct DataDeletionRequest {
 	pub user: UserData,
 	#[serde(rename = "correlationId")]
 	pub correlation_id: Uuid,
-	#[serde(rename = "type")]
+	#[serde(rename = "deletionType")]
 	pub message_type: String,
 	#[serde(default = "default_version", deserialize_with = "validate_version")]
 	pub version: i32,
