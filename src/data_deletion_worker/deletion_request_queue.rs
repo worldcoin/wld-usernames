@@ -53,6 +53,12 @@ pub struct QueueMessage {
 	pub receipt_handle: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct SnsNotification {
+	#[serde(rename = "Message")]
+	message: String,
+}
+
 #[async_trait]
 pub trait DeletionRequestQueue: Send + Sync {
 	async fn poll_messages(&self) -> Result<Vec<QueueMessage>, QueueError>;
@@ -118,8 +124,16 @@ impl DeletionRequestQueueImpl {
 			QueueError::InvalidMessage("Message receipt handle is missing".to_string())
 		})?;
 
-		let request: DataDeletionRequest = serde_json::from_str(body)
-			.map_err(|e| QueueError::InvalidMessage(format!("Failed to parse message: {e}")))?;
+		// First parse the SNS notification wrapper
+		let sns_notification: SnsNotification = serde_json::from_str(body).map_err(|e| {
+			QueueError::InvalidMessage(format!("Failed to parse SNS envelope: {e}"))
+		})?;
+
+		// Then parse the actual message content
+		let request: DataDeletionRequest = serde_json::from_str(&sns_notification.message)
+			.map_err(|e| {
+				QueueError::InvalidMessage(format!("Failed to parse message content: {e}"))
+			})?;
 
 		Ok(QueueMessage {
 			request,
