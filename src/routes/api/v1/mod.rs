@@ -3,6 +3,7 @@ use aide::axum::{
 	ApiRouter,
 };
 
+mod avatar;
 mod ens_gateway;
 mod query_multiple;
 mod query_single;
@@ -11,6 +12,7 @@ mod rename;
 mod search;
 mod update_record;
 
+use avatar::{avatar, docs as avatar_docs};
 use ens_gateway::{docs as ens_gateway_docs, ens_gateway_get, ens_gateway_post};
 use http::Method;
 use query_multiple::{docs as query_multiple_docs, query_multiple};
@@ -38,6 +40,8 @@ pub fn handler() -> ApiRouter {
 		)
 		.layer(cors.clone())
 		.api_route("/query", post_with(query_multiple, query_multiple_docs))
+		.layer(cors.clone())
+		.api_route("/avatar/:name", get_with(avatar, avatar_docs))
 		.layer(cors.clone())
 		.api_route("/rename", post_with(rename, rename_docs))
 		.api_route(

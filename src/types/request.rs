@@ -42,6 +42,12 @@ pub struct QueryAddressesPayload {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct AvatarQueryParams {
+	/// The URL to redirect to if the username is not found or does not have a profile picture URL.
+	pub fallback: Option<Url>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct UpdateUsernamePayload {
 	/// 0x-prefixed hex string of the World ID proof.
 	proof: String,
