@@ -5,6 +5,7 @@ use axum::{
 };
 use redis::{aio::ConnectionManager, AsyncCommands};
 use tracing::{info_span, Instrument};
+use url::Url;
 
 use crate::{
 	config::Db,
@@ -44,6 +45,11 @@ pub async fn avatar(
 
 			return Ok(Redirect::temporary(&profile_picture_url).into_response());
 		}
+
+		return Ok(fallback_response(
+			params.fallback,
+			"Avatar not set".to_string(),
+		));
 	}
 
 	if let Some(moved) = sqlx::query_as!(
@@ -60,11 +66,17 @@ pub async fn avatar(
 		);
 	}
 
-	if let Some(fallback) = params.fallback {
-		return Ok(Redirect::temporary(fallback.as_str()).into_response());
-	}
+	Ok(fallback_response(
+		params.fallback,
+		"Record not found".to_string(),
+	))
+}
 
-	Err(ErrorResponse::not_found("Record not found.".to_string()))
+fn fallback_response(fallback: Option<Url>, error_msg: String) -> Response {
+	fallback.map_or_else(
+		|| ErrorResponse::not_found(error_msg).into_response(),
+		|fallback| Redirect::temporary(fallback.as_str()).into_response(),
+	)
 }
 
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
