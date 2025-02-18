@@ -2,7 +2,7 @@ use aide::{axum::ApiRouter, openapi::OpenApi, scalar::Scalar};
 use axum::{routing::get, Extension, Json};
 
 pub fn handler() -> ApiRouter {
-	let scalar = Scalar::new("/openapi.json").with_title("Orbit Docs");
+	let scalar = Scalar::new("/openapi.json").with_title("World App Username API Docs");
 
 	ApiRouter::new()
 		.route("/docs", scalar.axum_route())
