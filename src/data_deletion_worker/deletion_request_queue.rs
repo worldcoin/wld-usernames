@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_sqs::{config::Credentials, Client as SqsClient, Config};
+use futures::StreamExt;
 use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{instrument, warn};
 use uuid::Uuid;
@@ -140,6 +141,31 @@ impl DeletionRequestQueueImpl {
 			receipt_handle,
 		})
 	}
+
+	fn is_valid_message_type(message_type: &str) -> bool {
+		matches!(message_type, "data_deletion" | "user_deletion")
+	}
+
+	async fn discard_unknown_message_types(&self, message: QueueMessage) -> Option<QueueMessage> {
+		if Self::is_valid_message_type(&message.request.message_type) {
+			Some(message)
+		} else {
+			warn!(
+				correlation_id = %message.request.correlation_id,
+				"Discarding message with unsupported type: {} - {:?}",
+				message.request.message_type, message
+			);
+
+			if let Err(e) = self.acknowledge(&message.receipt_handle).await {
+				warn!(
+					correlation_id = %message.request.correlation_id,
+					"Failed to acknowledge invalid message type: {} - error: {}",
+					message.request.message_type, e
+				);
+			}
+			None
+		}
+	}
 }
 
 #[async_trait]
@@ -157,7 +183,8 @@ impl DeletionRequestQueue for DeletionRequestQueueImpl {
 
 		let messages = receive_msg_output.messages.unwrap_or_default();
 
-		Ok(messages
+		// First, parse all valid messages
+		let parsed_messages = messages
 			.into_iter()
 			.filter_map(|msg| match Self::format_message(msg.clone()) {
 				Ok(queue_msg) => Some(queue_msg),
@@ -166,7 +193,15 @@ impl DeletionRequestQueue for DeletionRequestQueueImpl {
 					None
 				},
 			})
-			.collect())
+			.collect::<Vec<_>>();
+
+		// Then, filter out and handle invalid message types
+		let valid_messages = futures::stream::iter(parsed_messages)
+			.filter_map(|msg| async move { self.discard_unknown_message_types(msg).await })
+			.collect::<Vec<_>>()
+			.await;
+
+		Ok(valid_messages)
 	}
 
 	#[instrument(skip(self), err)]
