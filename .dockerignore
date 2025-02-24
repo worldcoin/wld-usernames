@@ -6,3 +6,7 @@ Dockerfile
 /contracts
 /dependencies
 .dockerignore
+
+# Added by SEC-1406 patch
+.git
+.gitignore
