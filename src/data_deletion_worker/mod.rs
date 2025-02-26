@@ -4,7 +4,7 @@ mod error;
 mod username_deletion_service;
 mod worker;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use redis::aio::ConnectionManager;
 use sqlx::postgres::PgPoolOptions;
 use std::{env, time::Duration};
