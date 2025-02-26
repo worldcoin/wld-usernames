@@ -46,11 +46,7 @@ async fn main() -> anyhow::Result<()> {
 				}))
 			},
 			Err(e) => {
-				if e.to_string().contains("REDIS_URL") || e.to_string().contains("Redis") {
-					tracing::error!("❌ Redis connection error: {}. Redis is required for the data deletion worker.", e);
-				} else {
-					tracing::error!("❌ Error initializing data deletion worker: {}", e);
-				}
+				tracing::error!("❌ Error initializing worker: {}", e);
 				None
 			},
 		}
