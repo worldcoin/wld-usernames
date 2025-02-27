@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use sqlx::PgPool;
 use std::str::FromStr;
-use tracing::instrument;
+use tracing::{info_span, instrument, Instrument};
 
 use super::error::QueueError;
 
@@ -42,11 +42,33 @@ impl UsernameDeletionService for UsernameDeletionServiceImpl {
 		.await
 		.map_err(QueueError::DatabaseError)?;
 
-		// Delete the username from the database
+		// Start a transaction to ensure atomicity
+		let mut tx = self.pool.begin().await.map_err(QueueError::DatabaseError)?;
+
+		// For each username, first delete any records in old_names that reference it
+		for row in &usernames {
+			let username = &row.username;
+
+			// Delete records where this username is the new_username (referenced by foreign key)
+			sqlx::query!("DELETE FROM old_names WHERE new_username = $1", username)
+				.execute(&mut *tx)
+				.instrument(info_span!("delete_old_names_db_query", username = username))
+				.await
+				.map_err(QueueError::DatabaseError)?;
+		}
+
+		// Now it's safe to delete the usernames from the names table
 		sqlx::query!("DELETE FROM names WHERE address = $1", wallet_address)
-			.execute(&self.pool)
+			.execute(&mut *tx)
+			.instrument(info_span!(
+				"delete_names_db_query",
+				wallet_address = wallet_address
+			))
 			.await
 			.map_err(QueueError::DatabaseError)?;
+
+		// Commit the transaction
+		tx.commit().await.map_err(QueueError::DatabaseError)?;
 
 		let mut redis = self.redis.clone();
 
