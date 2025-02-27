@@ -1,6 +1,8 @@
+use alloy::primitives::Address;
 use async_trait::async_trait;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use sqlx::PgPool;
+use std::str::FromStr;
 use tracing::instrument;
 
 use super::error::QueueError;
@@ -28,6 +30,10 @@ impl UsernameDeletionService for UsernameDeletionServiceImpl {
 	async fn delete_username(&self, wallet_address: &str) -> Result<(), QueueError> {
 		// First, get the username(s) associated with this wallet address
 		// We need this to invalidate the cache by username
+		let wallet_address = Address::from_str(wallet_address).map_or_else(
+			|_| wallet_address.to_string(),
+			|address| address.to_checksum(None),
+		);
 		let usernames = sqlx::query!(
 			"SELECT username FROM names WHERE address = $1",
 			wallet_address
