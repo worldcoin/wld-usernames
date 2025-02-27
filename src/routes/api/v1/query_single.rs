@@ -91,8 +91,90 @@ pub async fn query_single(
 	Err(ErrorResponse::not_found("Record not found.".to_string()))
 }
 
+/// A version of query_single that always includes the updated_at timestamp and doesn't cache
+#[tracing::instrument(skip_all)]
+pub async fn query_single_with_timestamp(
+	Extension(db): Extension<Db>,
+	Path(name_or_address): Path<String>,
+) -> Result<Response, ErrorResponse> {
+	let validated_input = validate_address(&name_or_address);
+
+	if let Some(name) = sqlx::query_as!(
+		Name,
+		r#"
+        SELECT 
+            username as "username!",
+            address as "address!",
+            profile_picture_url,
+            nullifier_hash as "nullifier_hash!",
+            verification_level as "verification_level!",
+            created_at as "created_at!",
+            updated_at as "updated_at!"
+        FROM names 
+        WHERE LOWER(username) = LOWER($1) 
+        UNION ALL 
+        SELECT 
+            username as "username!",
+            address as "address!",
+            profile_picture_url,
+            nullifier_hash as "nullifier_hash!",
+            verification_level as "verification_level!",
+            created_at as "created_at!",
+            updated_at as "updated_at!"
+        FROM names 
+        WHERE address = $1 AND LOWER(username) <> LOWER($1)
+        "#,
+		validated_input
+	)
+	.fetch_optional(&db.read_only)
+	.instrument(info_span!(
+		"query_single_timestamp_db_query",
+		input = validated_input
+	))
+	.await?
+	{
+		let updated_at = name.updated_at.clone();
+		let mut record = UsernameRecord::from(name);
+		record.updated_at = Some(updated_at);
+		return Ok(Json(record).into_response());
+	}
+
+	if let Some(moved) = sqlx::query_as!(
+		MovedRecord,
+		"SELECT * FROM old_names WHERE old_username = $1",
+		name_or_address
+	)
+	.fetch_optional(&db.read_only)
+	.instrument(info_span!(
+		"query_single_timestamp_moved_db_query",
+		username = name_or_address
+	))
+	.await?
+	{
+		return Ok(
+			Redirect::permanent(&format!("/api/v1/timestamp/{}", moved.new_username))
+				.into_response(),
+		);
+	}
+
+	Err(ErrorResponse::not_found("Record not found.".to_string()))
+}
+
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
 	op.description("Resolve a single username or address.")
+		.response::<404, ErrorResponse>()
+		.response::<200, Json<UsernameRecord>>()
+		.response_with::<301, Redirect, _>(|op| {
+			op.description(
+				"A redirect to the new username, if the queries username has recently changed.",
+			)
+		})
+}
+
+pub fn timestamp_docs(
+	op: aide::transform::TransformOperation,
+) -> aide::transform::TransformOperation {
+	op.description("Resolve a single username or address with timestamp information.")
 		.response::<404, ErrorResponse>()
 		.response::<200, Json<UsernameRecord>>()
 		.response_with::<301, Redirect, _>(|op| {
