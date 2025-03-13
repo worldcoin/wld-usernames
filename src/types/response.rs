@@ -21,9 +21,6 @@ pub struct UsernameRecord {
 	pub address: Address,
 	/// URL to the user's profile picture.
 	pub profile_picture_url: Option<Url>,
-	/// The time at which this record was last updated.
-	#[serde(skip_serializing_if = "Option::is_none")]
-	pub updated_at: Option<chrono::NaiveDateTime>,
 }
 
 #[allow(clippy::fallible_impl_from)]
@@ -33,7 +30,6 @@ impl From<Name> for UsernameRecord {
 			username: value.username,
 			address: Address(value.address.parse().unwrap()),
 			profile_picture_url: value.profile_picture_url.map(|url| url.parse().unwrap()),
-			updated_at: None,
 		}
 	}
 }
@@ -45,7 +41,6 @@ impl From<NameSearch> for UsernameRecord {
 			username: value.username,
 			address: Address(value.address.parse().unwrap()),
 			profile_picture_url: value.profile_picture_url.map(|url| url.parse().unwrap()),
-			updated_at: None,
 		}
 	}
 }
