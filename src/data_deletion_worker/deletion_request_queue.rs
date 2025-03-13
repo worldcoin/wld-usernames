@@ -143,7 +143,7 @@ impl DeletionRequestQueueImpl {
 	}
 
 	fn is_valid_message_type(message_type: &str) -> bool {
-		matches!(message_type, "data_deletion" | "user_deletion")
+		matches!(message_type, "data_deletion" | "account_deletion")
 	}
 
 	async fn discard_unknown_message_types(&self, message: QueueMessage) -> Option<QueueMessage> {
