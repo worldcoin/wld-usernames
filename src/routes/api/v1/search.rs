@@ -46,14 +46,20 @@ pub async fn search(
 		{
 			Ok(records) => {
 				tracing::info!("OpenSearch search successful: {:?}", records);
-				// cache the results
-				if let Ok(json_data) = serde_json::to_string(&records) {
-					let _: Result<(), redis::RedisError> = redis
-						.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 5)
-						.await;
-				}
 
-				return Ok(Json(records).into_response());
+				// Fall back to PostgreSQL if OpenSearch returns empty results
+				if records.is_empty() {
+					tracing::info!("OpenSearch returned no results, falling back to PostgreSQL");
+				} else {
+					// cache the results
+					if let Ok(json_data) = serde_json::to_string(&records) {
+						let _: Result<(), redis::RedisError> = redis
+							.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 5)
+							.await;
+					}
+
+					return Ok(Json(records).into_response());
+				}
 			},
 			Err(e) => {
 				// log the error but fall back to PostgreSQL
