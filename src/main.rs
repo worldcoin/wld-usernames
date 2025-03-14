@@ -4,6 +4,7 @@ mod blocklist;
 mod config;
 mod data_deletion_worker;
 mod routes;
+mod search;
 mod server;
 mod types;
 mod utils;
@@ -29,6 +30,11 @@ async fn main() -> anyhow::Result<()> {
 	let config = config::Config::from_env().await?;
 	config.migrate_database().await?;
 	tracing::info!("👩‍🌾 Migrations run");
+
+	// Initialize OpenSearch client
+	if let Err(e) = config::Config::init_opensearch().await {
+		tracing::error!("❌ Error initializing OpenSearch client: {}", e);
+	}
 
 	// Create shutdown channel
 	let (shutdown_tx, _) = broadcast::channel(1);
