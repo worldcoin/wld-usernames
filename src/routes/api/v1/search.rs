@@ -35,7 +35,8 @@ pub async fn search(
 		NameSearch,
 		"SELECT username,
 			address,
-			profile_picture_url
+			profile_picture_url,
+			minimized_profile_picture_url
 			FROM names
 			WHERE username % $1
 			ORDER BY username <-> $1

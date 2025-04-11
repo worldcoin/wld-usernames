@@ -17,6 +17,8 @@ pub struct RegisterUsernamePayload {
 	pub address: Address,
 	/// The user's profile picture URL.
 	pub profile_picture_url: Option<Url>,
+	/// The user's minimized profile picture URL.
+	pub minimized_profile_picture_url: Option<Url>,
 	/// 0x-prefixed hex string of the World ID nullifier hash.
 	pub nullifier_hash: String,
 	/// World ID verification level the user holds.
@@ -45,6 +47,8 @@ pub struct QueryAddressesPayload {
 pub struct AvatarQueryParams {
 	/// The URL to redirect to if the username is not found or does not have a profile picture URL.
 	pub fallback: Option<Url>,
+	/// Whether to return the minimized version of the profile picture. Defaults to false.
+	pub minimized: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -57,6 +61,8 @@ pub struct UpdateUsernamePayload {
 	pub address: Address,
 	/// The username's new profile picture URL. If not provided, the exixting profile picture URL will be deleted.
 	pub profile_picture_url: Option<Url>,
+	/// The username's new minimized profile picture URL. If not provided, the existing minimized profile picture URL will be deleted.
+	pub minimized_profile_picture_url: Option<Url>,
 	/// 0x-prefixed hex string of the World ID nullifier hash.
 	pub nullifier_hash: String,
 	/// World ID verification level the user holds.

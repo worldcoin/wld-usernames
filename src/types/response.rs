@@ -21,6 +21,8 @@ pub struct UsernameRecord {
 	pub address: Address,
 	/// URL to the user's profile picture.
 	pub profile_picture_url: Option<Url>,
+	/// URL to the user's minimized profile picture.
+	pub minimized_profile_picture_url: Option<Url>,
 }
 
 #[allow(clippy::fallible_impl_from)]
@@ -30,6 +32,7 @@ impl From<Name> for UsernameRecord {
 			username: value.username,
 			address: Address(value.address.parse().unwrap()),
 			profile_picture_url: value.profile_picture_url.map(|url| url.parse().unwrap()),
+			minimized_profile_picture_url: value.minimized_profile_picture_url.map(|url| url.parse().unwrap()),
 		}
 	}
 }
@@ -41,6 +44,7 @@ impl From<NameSearch> for UsernameRecord {
 			username: value.username,
 			address: Address(value.address.parse().unwrap()),
 			profile_picture_url: value.profile_picture_url.map(|url| url.parse().unwrap()),
+			minimized_profile_picture_url: value.minimized_profile_picture_url.map(|url| url.parse().unwrap()),
 		}
 	}
 }
