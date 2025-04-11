@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT username, profile_picture_url FROM names WHERE LOWER(username) = LOWER($1)",
+  "query": "SELECT username, profile_picture_url, minimized_profile_picture_url FROM names WHERE LOWER(username) = LOWER($1)",
   "describe": {
     "columns": [
       {
@@ -12,6 +12,11 @@
         "ordinal": 1,
         "name": "profile_picture_url",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "minimized_profile_picture_url",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -21,8 +26,9 @@
     },
     "nullable": [
       false,
+      true,
       true
     ]
   },
-  "hash": "cb225a26fa94514498c7aff0786bd09fb42ef1fe133a4c1b4d1922e3ce80dc61"
+  "hash": "6f15a2cd0a7e6caf8a0745bdac9926751f6bfc302312288f8e021bf7fb7b03c6"
 }
