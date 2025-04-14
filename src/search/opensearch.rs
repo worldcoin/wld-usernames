@@ -31,7 +31,7 @@ impl OpenSearchClient {
 		let opensearch_url =
 			env::var("OPENSEARCH_ENDPOINT").unwrap_or_else(|_| DEFAULT_ENDPOINT.to_string());
 		let index_name =
-			env::var("OPENSEARCH_INDEX").unwrap_or_else(|_| DEFAULT_INDEX_NAME.to_string());
+			env::var("OPENSEARCH_INDEX_NAME").unwrap_or_else(|_| DEFAULT_INDEX_NAME.to_string());
 
 		info!("Connecting to OpenSearch at {}", opensearch_url);
 
