@@ -1,13 +1,14 @@
 use anyhow::{Context, Result};
+use aws_config::meta::region::RegionProviderChain;
+
 use opensearch::{
-	auth::Credentials,
 	cert::CertificateValidation,
 	http::{
 		transport::{SingleNodeConnectionPool, TransportBuilder},
 		StatusCode,
 	},
-	indices::{IndicesExistsParts, IndicesPutTemplateParts},
-	DeleteParts, OpenSearch, SearchParts,
+	indices::{IndicesCreateParts, IndicesExistsParts, IndicesPutTemplateParts},
+	OpenSearch, SearchParts,
 };
 use serde_json::{json, Value};
 use std::{env, time::Duration};
@@ -16,41 +17,46 @@ use url::Url;
 
 use crate::types::{Address, UsernameRecord};
 
-const USERNAME_INDEX: &str = "usernames";
+const DEFAULT_INDEX_NAME: &str = "names";
+const DEFAULT_ENDPOINT: &str = "http://localhost:9200";
 
 /// client for interacting with `OpenSearch`
 pub struct OpenSearchClient {
 	client: OpenSearch,
-	base_url: Url,
+	index_name: String,
 }
 
 impl OpenSearchClient {
 	pub async fn new() -> Result<Self> {
 		let opensearch_url =
-			env::var("OPENSEARCH_URL").unwrap_or_else(|_| "http://localhost:9200".to_string());
+			env::var("OPENSEARCH_ENDPOINT").unwrap_or_else(|_| DEFAULT_ENDPOINT.to_string());
+		let index_name =
+			env::var("OPENSEARCH_INDEX").unwrap_or_else(|_| DEFAULT_INDEX_NAME.to_string());
 
 		info!("Connecting to OpenSearch at {}", opensearch_url);
 
 		let base_url = Url::parse(&opensearch_url).context("Failed to parse OpenSearch URL")?;
-
 		let conn_pool = SingleNodeConnectionPool::new(base_url.clone().into());
 
-		let transport = TransportBuilder::new(conn_pool)
-			.timeout(Duration::from_secs(30))
-			.cert_validation(CertificateValidation::None); // adjust based on your security needs
-
-		let transport = if let (Ok(username), Ok(password)) = (
-			env::var("OPENSEARCH_USERNAME"),
-			env::var("OPENSEARCH_PASSWORD"),
-		) {
-			transport.auth(Credentials::Basic(username, password))
+		let transport = if base_url.host_str() == Some("localhost") {
+			TransportBuilder::new(conn_pool)
+				.timeout(Duration::from_secs(30))
+				.cert_validation(CertificateValidation::None)
+				.disable_proxy()
+				.build()?
 		} else {
-			transport
+			let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
+			let aws_config = aws_config::from_env().region(region_provider).load().await;
+			TransportBuilder::new(conn_pool)
+				.timeout(Duration::from_secs(30))
+				.auth(aws_config.try_into()?)
+				.service_name("es")
+				.build()?
 		};
 
-		let client = OpenSearch::new(transport.build()?);
+		let client = OpenSearch::new(transport);
 
-		let opensearch_client = Self { client, base_url };
+		let opensearch_client = Self { client, index_name };
 		opensearch_client.ensure_index_exists().await?;
 
 		Ok(opensearch_client)
@@ -61,16 +67,15 @@ impl OpenSearchClient {
 		let response = self
 			.client
 			.indices()
-			.exists(IndicesExistsParts::Index(&[USERNAME_INDEX]))
+			.exists(IndicesExistsParts::Index(&[&self.index_name]))
 			.send()
 			.await?;
 
 		if response.status_code() == StatusCode::NOT_FOUND {
-			info!("Index doesn't exist - DMS will create it during initial load");
-
+			info!("Index {} doesn't exist - creating it", self.index_name);
 			// index template for dms
 			let template = json!({
-				"index_patterns": [USERNAME_INDEX],
+				"index_patterns": [&self.index_name],
 				"template": {
 					"settings": {
 						"index": {
@@ -128,8 +133,21 @@ impl OpenSearchClient {
 					error_text
 				));
 			}
+
+			let response = self
+				.client
+				.indices()
+				.create(IndicesCreateParts::Index(&self.index_name))
+				.send()
+				.await?;
+
+			if !response.status_code().is_success() {
+				let error_text = response.text().await?;
+				error!("Failed to create index: {}", error_text);
+				return Err(anyhow::anyhow!("Failed to create index: {}", error_text));
+			}
 		} else {
-			info!("Index already exists - DMS will use the existing index");
+			info!("Index {} already exists", self.index_name);
 		}
 
 		Ok(())
@@ -169,7 +187,7 @@ impl OpenSearchClient {
 
 		let response = self
 			.client
-			.search(SearchParts::Index(&[USERNAME_INDEX]))
+			.search(SearchParts::Index(&[&self.index_name]))
 			.body(search_query)
 			.send()
 			.await?;
@@ -219,25 +237,5 @@ impl OpenSearchClient {
 		}
 
 		Ok(results)
-	}
-
-	/// delete a username from the index
-	pub async fn delete_username(&self, username: &str) -> Result<()> {
-		let response = self
-			.client
-			.delete(DeleteParts::IndexId(
-				USERNAME_INDEX,
-				&username.to_lowercase(),
-			))
-			.send()
-			.await?;
-
-		if !response.status_code().is_success() && response.status_code() != StatusCode::NOT_FOUND {
-			let error_text = response.text().await?;
-			error!("Failed to delete username: {}", error_text);
-			return Err(anyhow::anyhow!("Failed to delete username: {}", error_text));
-		}
-
-		Ok(())
 	}
 }

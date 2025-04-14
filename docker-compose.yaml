@@ -18,6 +18,23 @@ services:
         required: true
     ports:
       - "6379:6379"
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    env_file:
+      - path: ./.env
+        required: true
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./localstack/init.sh:/etc/localstack/init/ready.d/script.sh
+
+  dynamodb:
+    image: amazon/dynamodb-local
+    ports:
+      - "8000:8000"
+
   opensearch:
     image: opensearchproject/opensearch:2.11.1
     environment:
@@ -41,6 +58,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 5
+  
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:2.11.0
     container_name: wld-usernames-opensearch-dashboards
@@ -51,6 +69,7 @@ services:
       - "DISABLE_SECURITY_DASHBOARDS_PLUGIN=true"
     depends_on:
       - opensearch
+  
   dd-agent:
     image: gcr.io/datadoghq/agent:7
     env_file:

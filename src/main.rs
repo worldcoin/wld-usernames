@@ -31,11 +31,6 @@ async fn main() -> anyhow::Result<()> {
 	config.migrate_database().await?;
 	tracing::info!("👩‍🌾 Migrations run");
 
-	// Initialize OpenSearch client
-	if let Err(e) = config::Config::init_opensearch().await {
-		tracing::error!("❌ Error initializing OpenSearch client: {}", e);
-	}
-
 	// Create shutdown channel
 	let (shutdown_tx, _) = broadcast::channel(1);
 

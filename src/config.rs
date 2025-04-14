@@ -172,29 +172,6 @@ impl Config {
 	pub fn extension(self) -> ConfigExt {
 		Extension(Arc::new(self))
 	}
-
-	pub async fn init_opensearch() -> Result<(), Error> {
-		if env::var("ENABLE_OPENSEARCH").unwrap_or_default() != "true" {
-			tracing::info!("OpenSearch is disabled");
-			return Ok(());
-		}
-
-		match crate::search::OpenSearchClient::new().await {
-			Ok(client) => {
-				let client = Arc::new(client);
-				if OPENSEARCH_CLIENT.set(client).is_err() {
-					tracing::warn!("OpenSearch client was already initialized");
-				} else {
-					tracing::info!("OpenSearch client initialized successfully");
-				}
-				Ok(())
-			},
-			Err(e) => {
-				tracing::error!("Failed to initialize OpenSearch client: {}", e);
-				Err(Error::EnvWithContext(e))
-			},
-		}
-	}
 }
 
 async fn build_redis_pool(mut redis_url: String) -> redis::RedisResult<ConnectionManager> {
