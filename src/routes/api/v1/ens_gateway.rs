@@ -84,13 +84,6 @@ async fn process_ens_request(
 
 					(avatar_url).abi_encode()
 				},
-				"minimized_avatar" => {
-					let Some(avatar_url) = record.minimized_profile_picture_url else {
-						return Err(ENSErrorResponse::new(&format!("Record not found: {key}")));
-					};
-
-					(avatar_url).abi_encode()
-				},
 				// hack to hide etherscan error
 				"email" => "".to_string().abi_encode(),
 				"url" => "".to_string().abi_encode(),
