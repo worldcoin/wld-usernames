@@ -18,4 +18,6 @@ pub enum QueueError {
 	),
 	#[error("Database error: {0}")]
 	DatabaseError(#[from] sqlx::Error),
+	#[error("Cache invalidation error: {0}")]
+	CacheInvalidationError(String),
 }

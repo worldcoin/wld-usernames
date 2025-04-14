@@ -41,10 +41,16 @@ async fn main() -> anyhow::Result<()> {
 
 	// Initialize worker only in staging environment
 	let worker_handle = if env::var("ENABLE_DATA_DELETION_WORKER").unwrap_or_default() == "true" {
-		tracing::info!("👩‍🌾 Worker initialized");
-		// Initialize worker with its own database pool
-		match data_deletion_worker::init_deletion_worker().await {
+		tracing::info!("👩‍🌾 Initializing data deletion worker...");
+
+		// Get Redis connection from config
+		let redis_connection = config.get_redis_connection();
+		tracing::info!("✅ Got Redis connection for deletion worker from config");
+
+		// Initialize worker with the Redis connection
+		match data_deletion_worker::init_deletion_worker(redis_connection).await {
 			Ok(worker) => {
+				tracing::info!("✅ Data deletion worker initialized successfully");
 				let worker_shutdown_rx = shutdown_tx.subscribe();
 				Some(tokio::spawn(async move {
 					worker.run(worker_shutdown_rx).await;
@@ -56,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
 			},
 		}
 	} else {
-		tracing::info!("👩‍🌾 Worker not initialized");
+		tracing::info!("👩‍🌾 Data deletion worker not enabled");
 		None
 	};
 

@@ -161,6 +161,10 @@ impl Config {
 		Extension(self.redis_pool.take().unwrap().connection)
 	}
 
+	pub fn get_redis_connection(&self) -> ConnectionManager {
+		self.redis_pool.as_ref().unwrap().connection.clone()
+	}
+
 	pub fn blocklist_extension(&mut self) -> BlocklistExt {
 		Extension(Arc::new(self.blocklist.take().unwrap()))
 	}

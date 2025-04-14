@@ -5,6 +5,7 @@ mod username_deletion_service;
 mod worker;
 
 use anyhow::Result;
+use redis::aio::ConnectionManager;
 use sqlx::postgres::PgPoolOptions;
 use std::{env, time::Duration};
 
@@ -14,7 +15,9 @@ use self::{
 	username_deletion_service::UsernameDeletionServiceImpl, worker::DataDeletionWorker,
 };
 
-pub async fn init_deletion_worker() -> Result<DataDeletionWorker> {
+pub async fn init_deletion_worker(
+	redis_connection: ConnectionManager,
+) -> Result<DataDeletionWorker> {
 	// Initialize a dedicated DB pool for the worker
 	let db_pool = PgPoolOptions::new()
         .max_connections(5) // Lower connection count since it's dedicated
@@ -22,10 +25,14 @@ pub async fn init_deletion_worker() -> Result<DataDeletionWorker> {
         .connect(&env::var("DATABASE_URL")?)
         .await?;
 
+	tracing::info!("✅ Using Redis connection from server config for deletion worker.");
+
 	// Initialize worker components
 	let request_queue = DeletionRequestQueueImpl::new().await?;
 	let completion_queue = DeletionCompletionQueueImpl::new().await?;
-	let deletion_service = UsernameDeletionServiceImpl::new(db_pool);
+
+	// Create deletion service with Redis
+	let deletion_service = UsernameDeletionServiceImpl::new(db_pool, redis_connection);
 
 	// Initialize the worker
 	let worker = DataDeletionWorker::new(
