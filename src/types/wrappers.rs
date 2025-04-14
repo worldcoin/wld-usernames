@@ -1,12 +1,20 @@
 use schemars::{schema, JsonSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{fmt, fmt::Display, ops::Deref};
+use std::{fmt, fmt::Display, ops::Deref, str::FromStr};
 
 /// 0x-prefixed hex string representing an Ethereum address.
 #[repr(transparent)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Address(pub alloy::primitives::Address);
+
+impl Address {
+	pub fn from_string(s: &str) -> anyhow::Result<Self> {
+		let address = alloy::primitives::Address::from_str(s)
+			.map_err(|e| anyhow::anyhow!("Failed to parse address: {}", e))?;
+		Ok(Self(address))
+	}
+}
 
 impl Deref for Address {
 	type Target = alloy::primitives::Address;

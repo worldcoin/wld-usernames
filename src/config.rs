@@ -1,6 +1,7 @@
 use anyhow::Context;
 use axum::Extension;
 use idkit::session::AppId;
+use once_cell::sync::OnceCell;
 use redis::aio::ConnectionManager;
 use regex::Regex;
 use sqlx::{migrate::MigrateError, postgres::PgPoolOptions, PgPool};
@@ -12,7 +13,10 @@ use std::{
 	time::Duration,
 };
 
-use crate::blocklist::{Blocklist, BlocklistExt};
+use crate::{
+	blocklist::{Blocklist, BlocklistExt},
+	search::OpenSearchClient,
+};
 
 #[allow(clippy::module_name_repetitions)]
 pub type ConfigExt = Extension<Arc<Config>>;
@@ -23,6 +27,8 @@ pub static DEVICE_USERNAME_REGEX: LazyLock<Regex> =
 	LazyLock::new(|| Regex::new(r"^[a-z]\w{2,13}[a-z0-9]\.\d{4}$").unwrap());
 pub static USERNAME_SEARCH_REGEX: LazyLock<Regex> =
 	LazyLock::new(|| Regex::new(r"^[a-z]\w{0,13}([a-z0-9](\.\d{1,4})?)$").unwrap());
+
+pub static OPENSEARCH_CLIENT: OnceCell<Arc<OpenSearchClient>> = OnceCell::new();
 
 #[derive(Clone)]
 pub struct ConnectionManagerDebug {
@@ -69,6 +75,8 @@ pub enum Error {
 	EnvWithContext(#[from] anyhow::Error),
 	#[error(transparent)]
 	Redis(#[from] redis::RedisError),
+	#[error(transparent)]
+	Reqwest(#[from] reqwest::Error),
 }
 
 impl Config {
@@ -105,6 +113,19 @@ impl Config {
 			.expect("Failed to connect to Redis");
 
 		tracing::info!("✅ Connection to Redis established.");
+
+		// Initialize OpenSearch client
+		if OPENSEARCH_CLIENT.get().is_none() {
+			match OpenSearchClient::new().await {
+				Ok(client) => {
+					tracing::info!("✅ Connection to OpenSearch established.");
+					let _ = OPENSEARCH_CLIENT.set(Arc::new(client));
+				},
+				Err(e) => {
+					tracing::error!("❌ Failed to connect to OpenSearch: {}", e);
+				},
+			}
+		}
 
 		Ok(Self {
 			db_client: Some(db_client),
@@ -161,4 +182,8 @@ async fn build_redis_pool(mut redis_url: String) -> redis::RedisResult<Connectio
 	let client = redis::Client::open(redis_url)?;
 
 	ConnectionManager::new(client).await
+}
+
+pub fn get_opensearch_client() -> Option<Arc<OpenSearchClient>> {
+	OPENSEARCH_CLIENT.get().cloned()
 }
