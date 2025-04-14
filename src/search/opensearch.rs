@@ -36,7 +36,7 @@ impl OpenSearchClient {
 		info!("Connecting to OpenSearch at {}", opensearch_url);
 
 		let base_url = Url::parse(&opensearch_url).context("Failed to parse OpenSearch URL")?;
-		let conn_pool = SingleNodeConnectionPool::new(base_url.clone().into());
+		let conn_pool = SingleNodeConnectionPool::new(base_url.clone());
 
 		let transport = if base_url.host_str() == Some("localhost") {
 			TransportBuilder::new(conn_pool)
