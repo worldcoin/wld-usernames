@@ -223,8 +223,9 @@ impl OpenSearchClient {
 			let address = Address::from_string(&address_str)
 				.context("Failed to parse address from string")?;
 
-			let profile_picture_url = source["profile_picture_url"]
-				.as_str()
+			let profile_picture_url = source
+				.get("profile_picture_url")
+				.and_then(|v| v.as_str())
 				.and_then(|url| url.parse().ok());
 
 			let record = UsernameRecord {
