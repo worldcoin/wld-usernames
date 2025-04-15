@@ -1,6 +1,6 @@
 use crate::{
-	config::{get_opensearch_client, Db, USERNAME_SEARCH_REGEX},
-	types::{ErrorResponse, NameSearch, UsernameRecord},
+	config::{get_opensearch_client, USERNAME_SEARCH_REGEX},
+	types::{ErrorResponse, UsernameRecord},
 	utils::ONE_MINUTE_IN_SECONDS,
 };
 use axum::{
@@ -10,10 +10,9 @@ use axum::{
 };
 use axum_jsonschema::Json;
 use redis::{aio::ConnectionManager, AsyncCommands};
-use tracing::{info, info_span, Instrument};
+use tracing::{info_span, Instrument};
 
 pub async fn search(
-	Extension(db): Extension<Db>,
 	Extension(mut redis): Extension<ConnectionManager>,
 	Path(username): Path<String>,
 ) -> Result<Response, ErrorResponse> {
@@ -32,67 +31,33 @@ pub async fn search(
 		}
 	}
 
-	// try to use OpenSearch if available
-	if let Some(opensearch_client) = get_opensearch_client() {
-		info!("Using OpenSearch for search query: {}", lowercase_username);
+	let opensearch_client = get_opensearch_client().expect("OpenSearch client should be available");
 
-		match opensearch_client
-			.search_usernames(&lowercase_username, 10)
-			.instrument(info_span!(
-				"search_opensearch_query",
-				username = lowercase_username
+	match opensearch_client
+		.search_usernames(&lowercase_username, 10)
+		.instrument(info_span!(
+			"search_opensearch_query",
+			username = lowercase_username
+		))
+		.await
+	{
+		Ok(records) => {
+			// cache the results
+			if let Ok(json_data) = serde_json::to_string(&records) {
+				let _: Result<(), redis::RedisError> = redis
+					.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 5)
+					.await;
+			}
+
+			Ok(Json(records).into_response())
+		},
+		Err(e) => {
+			tracing::error!("OpenSearch search failed: {}", e);
+			Err(ErrorResponse::server_error(
+				"Search service failure".to_string(),
 			))
-			.await
-		{
-			Ok(records) => {
-				tracing::info!("OpenSearch search successful: {:?}", records);
-
-				// Fall back to PostgreSQL if OpenSearch returns empty results
-				if records.is_empty() {
-					tracing::info!("OpenSearch returned no results, falling back to PostgreSQL");
-				} else {
-					// cache the results
-					if let Ok(json_data) = serde_json::to_string(&records) {
-						let _: Result<(), redis::RedisError> = redis
-							.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 5)
-							.await;
-					}
-
-					return Ok(Json(records).into_response());
-				}
-			},
-			Err(e) => {
-				// log the error but fall back to PostgreSQL
-				tracing::error!("OpenSearch search failed: {}", e);
-			},
-		}
+		},
 	}
-
-	// fall back to PostgreSQL if OpenSearch is not available or fails
-	let names = sqlx::query_as!(
-		NameSearch,
-		"SELECT username,
-			address,
-			profile_picture_url
-			FROM names
-			WHERE username % $1
-			ORDER BY username <-> $1
-			LIMIT 10;",
-		lowercase_username
-	)
-	.fetch_all(&db.read_only)
-	.instrument(info_span!("search_db_query", username = lowercase_username))
-	.await?;
-
-	let records: Vec<UsernameRecord> = names.into_iter().map(UsernameRecord::from).collect();
-
-	if let Ok(json_data) = serde_json::to_string(&records) {
-		let _: Result<(), redis::RedisError> = redis
-			.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 5)
-			.await;
-	}
-
-	Ok(Json(records).into_response())
 }
 
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
