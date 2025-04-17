@@ -4,6 +4,7 @@ mod blocklist;
 mod config;
 mod data_deletion_worker;
 mod routes;
+mod search;
 mod server;
 mod types;
 mod utils;
