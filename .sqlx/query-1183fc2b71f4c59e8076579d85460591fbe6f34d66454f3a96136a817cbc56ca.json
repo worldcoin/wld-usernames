@@ -37,6 +37,11 @@
         "ordinal": 6,
         "name": "profile_picture_url",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "minimized_profile_picture_url",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -51,6 +56,7 @@
       false,
       false,
       false,
+      true,
       true
     ]
   },

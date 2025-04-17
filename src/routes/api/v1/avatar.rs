@@ -20,21 +20,28 @@ pub async fn avatar(
 	Query(params): Query<AvatarQueryParams>,
 	Path(name): Path<String>,
 ) -> Result<Response, ErrorResponse> {
-	let cache_key = format!("avatar:{name}");
+	let minimized = params.minimized.unwrap_or(false);
+	let cache_key = format!("avatar:{name}:{}", if minimized { "minimized" } else { "original" });
 
 	if let Ok(avatar_url) = redis.get::<_, String>(&cache_key).await {
 		return Ok(Redirect::temporary(&avatar_url).into_response());
 	}
 
 	if let Some(record) = sqlx::query!(
-		"SELECT username, profile_picture_url FROM names WHERE LOWER(username) = LOWER($1)",
+		"SELECT username, profile_picture_url, minimized_profile_picture_url FROM names WHERE LOWER(username) = LOWER($1)",
 		name
 	)
 	.fetch_optional(&db.read_only)
 	.instrument(info_span!("avatar_db_query", input = name))
 	.await?
 	{
-		if let Some(profile_picture_url) = record.profile_picture_url {
+		let profile_picture_url = if minimized {
+			record.minimized_profile_picture_url
+		} else {
+			record.profile_picture_url
+		};
+
+		if let Some(profile_picture_url) = profile_picture_url {
 			redis
 				.set_ex(
 					&cache_key,

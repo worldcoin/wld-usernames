@@ -72,10 +72,14 @@ pub async fn update_record(
 	};
 
 	sqlx::query!(
-		"UPDATE names SET address = $1, profile_picture_url = $2 WHERE username = $3",
+		"UPDATE names SET address = $1, profile_picture_url = $2, minimized_profile_picture_url = $3 WHERE username = $4",
 		payload.address.to_checksum(None),
 		payload
 			.profile_picture_url
+			.as_ref()
+			.map(ToString::to_string),
+		payload
+			.minimized_profile_picture_url
 			.as_ref()
 			.map(ToString::to_string),
 		username
