@@ -69,7 +69,7 @@ pub async fn query_single(
 		// long cache because we can effectively invalidate
 		if let Ok(json_data) = serde_json::to_string(&record) {
 			let _: Result<(), redis::RedisError> = redis
-				.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 60 * 24 * 7)
+				.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 60 * 24)
 				.await;
 		}
 		return Ok(Json(record).into_response());
