@@ -13,6 +13,8 @@ pub struct Name {
 	pub username: String,
 	/// URL of the owner's profile picture.
 	pub profile_picture_url: Option<String>,
+	/// URL of the owner's minimized profile picture.
+	pub minimized_profile_picture_url: Option<String>,
 	/// The nullifier hash of the proof that was used to register this name.
 	pub nullifier_hash: String,
 	/// The verification level of the proof that was used to register this name.
@@ -28,6 +30,7 @@ impl Name {
 		username: String,
 		address: &Address,
 		profile_picture_url: Option<Url>,
+		minimized_profile_picture_url: Option<Url>,
 		nullifier_hash: String,
 		verification_level: &VerificationLevel,
 	) -> Self {
@@ -39,6 +42,7 @@ impl Name {
 			address: address.to_checksum(None),
 			verification_level: verification_level.to_string(),
 			profile_picture_url: profile_picture_url.map(|u| u.to_string()),
+			minimized_profile_picture_url: minimized_profile_picture_url.map(|u| u.to_string()),
 		}
 	}
 }
@@ -54,6 +58,7 @@ pub struct NameSearch {
 	pub username: String,
 	pub address: String,
 	pub profile_picture_url: Option<String>,
+	pub minimized_profile_picture_url: Option<String>,
 }
 
 #[derive(Debug, sqlx::FromRow)] // Add other derives as needed like Debug, Clone, etc.

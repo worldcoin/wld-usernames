@@ -228,10 +228,16 @@ impl OpenSearchClient {
 				.and_then(|v| v.as_str())
 				.and_then(|url| url.parse().ok());
 
+			let minimized_profile_picture_url = source
+				.get("minimized_profile_picture_url")
+				.and_then(|v| v.as_str())
+				.and_then(|url| url.parse().ok());
+
 			let record = UsernameRecord {
 				username,
 				address,
 				profile_picture_url,
+				minimized_profile_picture_url,
 			};
 
 			results.push(record);

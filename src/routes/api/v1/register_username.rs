@@ -104,6 +104,7 @@ pub async fn register_username(
 		payload.username.clone(),
 		&payload.address,
 		payload.profile_picture_url,
+		payload.minimized_profile_picture_url,
 		payload.nullifier_hash,
 		&payload.verification_level,
 	)
