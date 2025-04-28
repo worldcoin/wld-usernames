@@ -21,7 +21,10 @@ pub async fn avatar(
 	Path(name): Path<String>,
 ) -> Result<Response, ErrorResponse> {
 	let minimized = params.minimized.unwrap_or(false);
-	let cache_key = format!("avatar:{name}:{}", if minimized { "minimized" } else { "original" });
+	let cache_key = format!(
+		"avatar:{name}:{}",
+		if minimized { "minimized" } else { "original" }
+	);
 
 	if let Ok(avatar_url) = redis.get::<_, String>(&cache_key).await {
 		return Ok(Redirect::temporary(&avatar_url).into_response());
@@ -46,7 +49,7 @@ pub async fn avatar(
 				.set_ex(
 					&cache_key,
 					&profile_picture_url,
-					ONE_MINUTE_IN_SECONDS * 60 * 24 * 7,
+					ONE_MINUTE_IN_SECONDS * 60 * 24,
 				)
 				.await?;
 
