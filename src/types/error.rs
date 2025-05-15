@@ -47,6 +47,13 @@ impl ErrorResponse {
 			status: StatusCode::INTERNAL_SERVER_ERROR,
 		}
 	}
+
+	pub const fn forbidden(error: String) -> Self {
+		Self {
+			error,
+			status: StatusCode::FORBIDDEN,
+		}
+	}
 }
 
 impl<E: std::error::Error> From<E> for ErrorResponse {

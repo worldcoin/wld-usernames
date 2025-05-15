@@ -52,6 +52,7 @@ pub struct Config {
 	pub ens_domain: String,
 	pub private_key: String,
 	pub developer_portal_url: String,
+	pub whitelisted_avatar_domains: Option<Vec<String>>,
 	db_client: Option<PgPool>,
 	db_read_client: Option<PgPool>,
 	redis_pool: Option<ConnectionManagerDebug>,
@@ -87,6 +88,14 @@ impl Config {
 			&env::var("BLOCKED_SUBSTRINGS")
 				.context("BLOCKED_SUBSTRINGS environment variable not set")?,
 		);
+
+		let whitelisted_avatar_domains =
+			env::var("WHITELISTED_AVATAR_DOMAINS").ok().map(|domains| {
+				domains
+					.split(',')
+					.map(|s| s.trim().to_lowercase())
+					.collect()
+			});
 
 		let db_client = PgPoolOptions::new()
 			.max_connections(50)
@@ -143,6 +152,7 @@ impl Config {
 			developer_portal_url: env::var("DEVELOPER_PORTAL_ENDPOINT")
 				.context("DEVELOPER_PORTAL_ENDPOINT environment variable not set")?,
 			redis_pool: Some(ConnectionManagerDebug::from(redis_pool)),
+			whitelisted_avatar_domains,
 		})
 	}
 
