@@ -100,7 +100,16 @@ fn fallback_response(fallback: Option<Url>, error_msg: String, config: &Config) 
 			// Check if the fallback URL's domain is in the whitelist
 			if let Some(domain) = fallback.host_str() {
 				let domain = domain.to_lowercase();
-				let whitelist = config.whitelisted_avatar_domains.as_ref().unwrap();
+				let whitelist = match config.whitelisted_avatar_domains.as_ref() {
+					Some(list) => list,
+					None => {
+						return ErrorResponse::forbidden(
+							"Fallback URLs are not allowed when whitelist is not configured"
+								.to_string(),
+						)
+						.into_response()
+					},
+				};
 
 				// Check if the domain exactly matches a whitelisted domain
 				// or is a subdomain of a whitelisted domain
