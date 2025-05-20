@@ -8,7 +8,7 @@ use tracing::{info_span, Instrument};
 use url::Url;
 
 use crate::{
-	config::{Config, Db},
+	config::{Config, ConfigExt, Db},
 	types::{AvatarQueryParams, ErrorResponse, MovedRecord},
 	utils::ONE_MINUTE_IN_SECONDS,
 };
@@ -17,7 +17,7 @@ use crate::{
 pub async fn avatar(
 	Extension(db): Extension<Db>,
 	Extension(mut redis): Extension<ConnectionManager>,
-	Extension(config): Extension<Config>,
+	Extension(config): ConfigExt,
 	Query(params): Query<AvatarQueryParams>,
 	Path(name): Path<String>,
 ) -> Result<Response, ErrorResponse> {
@@ -122,8 +122,8 @@ fn fallback_response(fallback: Option<Url>, error_msg: String, config: &Config) 
 			}
 
 			// If domain is not whitelisted or host is missing, return error
-			ErrorResponse::forbidden("Fallback URL domain is not whitelisted".to_string())
-				.into_response()
+			return ErrorResponse::forbidden("Fallback URL domain is not whitelisted".to_string())
+				.into_response();
 		},
 	)
 }
