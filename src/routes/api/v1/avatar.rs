@@ -8,7 +8,7 @@ use tracing::{info_span, Instrument};
 use url::Url;
 
 use crate::{
-	config::Db,
+	config::{Config, Db},
 	types::{AvatarQueryParams, ErrorResponse, MovedRecord},
 	utils::ONE_MINUTE_IN_SECONDS,
 };
@@ -17,6 +17,7 @@ use crate::{
 pub async fn avatar(
 	Extension(db): Extension<Db>,
 	Extension(mut redis): Extension<ConnectionManager>,
+	Extension(config): Extension<Config>,
 	Query(params): Query<AvatarQueryParams>,
 	Path(name): Path<String>,
 ) -> Result<Response, ErrorResponse> {
@@ -59,6 +60,7 @@ pub async fn avatar(
 		return Ok(fallback_response(
 			params.fallback,
 			"Avatar not set".to_string(),
+			&config,
 		));
 	}
 
@@ -79,24 +81,66 @@ pub async fn avatar(
 	Ok(fallback_response(
 		params.fallback,
 		"Record not found".to_string(),
+		&config,
 	))
 }
 
-fn fallback_response(fallback: Option<Url>, error_msg: String) -> Response {
+fn fallback_response(fallback: Option<Url>, error_msg: String, config: &Config) -> Response {
 	fallback.map_or_else(
 		|| ErrorResponse::not_found(error_msg).into_response(),
-		|fallback| Redirect::temporary(fallback.as_str()).into_response(),
+		|fallback| {
+			// If whitelist is not set, block all fallback URLs
+			if config.whitelisted_avatar_domains.is_none() {
+				return ErrorResponse::forbidden(
+					"Fallback URLs are not allowed when whitelist is not configured".to_string(),
+				)
+				.into_response();
+			}
+
+			// Check if the fallback URL's domain is in the whitelist
+			if let Some(domain) = fallback.host_str() {
+				let domain = domain.to_lowercase();
+				let whitelist = match config.whitelisted_avatar_domains.as_ref() {
+					Some(list) => list,
+					None => {
+						return ErrorResponse::forbidden(
+							"Fallback URLs are not allowed when whitelist is not configured"
+								.to_string(),
+						)
+						.into_response()
+					},
+				};
+
+				// Check if the domain exactly matches a whitelisted domain
+				// or is a subdomain of a whitelisted domain
+				if whitelist
+					.iter()
+					.any(|allowed| domain == allowed || domain.ends_with(&format!(".{}", allowed)))
+				{
+					return Redirect::temporary(fallback.as_str()).into_response();
+				}
+			}
+
+			// If domain is not whitelisted or host is missing, return error
+			ErrorResponse::forbidden("Fallback URL domain is not whitelisted".to_string())
+				.into_response()
+		},
 	)
 }
 
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
-	op.description("Redirect to the user's avatar, optionally falling back to a default.")
+	op.description("Redirect to the user's avatar, optionally falling back to a default. The fallback URL must be from a whitelisted domain specified in the WHITELISTED_AVATAR_DOMAINS environment variable.")
 		.response_with::<404, ErrorResponse, _>(|op| {
 			op.description(
 				"Returned when the user has no avatar and a fallback image is not provided.",
 			)
 		})
+		.response_with::<403, ErrorResponse, _>(|op| {
+			op.description(
+				"Returned when the fallback URL's domain is not whitelisted or when fallback URLs are not allowed (whitelist not configured).",
+			)
+		})
 		.response_with::<301, Redirect, _>(|op| {
-			op.description("A redirect to the user's avatar or the fallback avatar.")
+			op.description("A redirect to the user's avatar or the fallback avatar (if from a whitelisted domain).")
 		})
 }
