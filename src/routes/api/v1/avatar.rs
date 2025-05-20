@@ -115,7 +115,7 @@ fn fallback_response(fallback: Option<Url>, error_msg: String, config: &Config) 
 				// or is a subdomain of a whitelisted domain
 				if whitelist
 					.iter()
-					.any(|allowed| domain == *allowed || domain.ends_with(&format!(".{}", allowed)))
+					.any(|allowed| domain == allowed || domain.ends_with(&format!(".{}", allowed)))
 				{
 					return Redirect::temporary(fallback.as_str()).into_response();
 				}
