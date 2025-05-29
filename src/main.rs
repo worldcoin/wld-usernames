@@ -22,6 +22,9 @@ async fn main() -> anyhow::Result<()> {
 	// Initialize Datadog tracing
 	let (_guard, _tracer_shutdown) = datadog_tracing::init()?;
 
+	// Direct panics to logs instead of stderr
+	log_panics::init();
+
 	tracing::info!("👩 Server started");
 
 	// required for tls support
