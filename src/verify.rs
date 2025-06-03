@@ -11,8 +11,11 @@ pub enum Error {
 	Reqwest(#[from] reqwest::Error),
 	#[error("failed to decode response: {0}")]
 	Serde(#[from] serde_json::Error),
-	#[error("unexpected response")]
-	InvalidResponse(reqwest::Response),
+	#[error("unexpected response: {status}, body: {body}")]
+	InvalidResponse {
+		status: reqwest::StatusCode,
+		body: String,
+	},
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -71,6 +74,12 @@ pub async fn dev_portal_verify_proof<V: alloy::sol_types::SolValue + Send>(
 		StatusCode::BAD_REQUEST => {
 			Err(Error::Verification(response.json::<ErrorResponse>().await?))
 		},
-		_ => Err(Error::InvalidResponse(response)),
+		status => {
+			let body = response
+				.text()
+				.await
+				.unwrap_or_else(|e| format!("Failed to read body: {e}"));
+			Err(Error::InvalidResponse { status, body })
+		},
 	}
 }
