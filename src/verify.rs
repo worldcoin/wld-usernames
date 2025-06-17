@@ -77,12 +77,13 @@ pub async fn dev_portal_verify_proof<V: alloy::sol_types::SolValue + Send>(
 			.header(header::USER_AGENT, "idkit-rs")
 			.json(&body)
 			.send()
-			.await?;
+			.await
+			.map_err(Error::Reqwest)?;
 
 		match resp.status() {
 			StatusCode::OK => Ok(()),
 			StatusCode::BAD_REQUEST => {
-				let err = resp.json::<ErrorResponse>().await?;
+				let err = resp.json::<ErrorResponse>().await.map_err(Error::Reqwest)?;
 				Err(Error::Verification(err))
 			},
 			status => {
