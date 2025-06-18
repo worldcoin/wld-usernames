@@ -1,7 +1,8 @@
+use backon::{ExponentialBuilder, Retryable};
+use idkit::{hashing::hash_to_field, session::VerificationLevel, Proof};
 use reqwest::{header, StatusCode};
 use serde::Serialize;
-
-use idkit::{hashing::hash_to_field, session::VerificationLevel, Proof};
+use std::time::Duration;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -12,21 +13,17 @@ pub enum Error {
 	#[error("failed to decode response: {0}")]
 	Serde(#[from] serde_json::Error),
 	#[error("unexpected response: {status}, body: {body}")]
-	InvalidResponse {
-		status: reqwest::StatusCode,
-		body: String,
-	},
+	InvalidResponse { status: StatusCode, body: String },
 }
 
 #[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)] // Fields are used on the HTTP response
 pub struct ErrorResponse {
 	pub code: String,
 	pub detail: String,
 	pub attribute: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 struct VerificationRequest {
 	action: String,
 	proof: String,
@@ -49,37 +46,60 @@ pub async fn dev_portal_verify_proof<V: alloy::sol_types::SolValue + Send>(
 	signal: V,
 	developer_portal_url: String,
 ) -> Result<(), Error> {
-	let signal = signal.abi_encode_packed();
+	let packed = signal.abi_encode_packed();
+	let signal_hash = if packed.is_empty() {
+		None
+	} else {
+		Some(format!("0x{:x}", hash_to_field(&packed)))
+	};
 
-	let response = reqwest::Client::new()
-		.post(format!("{developer_portal_url}/api/v2/verify/{app_id}"))
-		.header(header::USER_AGENT, "idkit-rs")
-		.json(&VerificationRequest {
-			proof: proof.proof,
-			signal_hash: if signal.is_empty() {
-				None
-			} else {
-				Some(format!("0x{:x}", hash_to_field(&signal)))
+	let body = VerificationRequest {
+		action: action.to_owned(),
+		proof: proof.proof.clone(),
+		merkle_root: proof.merkle_root.clone(),
+		nullifier_hash: proof.nullifier_hash.clone(),
+		verification_level: proof.verification_level,
+		signal_hash,
+	};
+
+	let client = reqwest::Client::new();
+	let url = format!("{developer_portal_url}/api/v2/verify/{app_id}");
+
+	let policy = ExponentialBuilder::default()
+		.with_min_delay(Duration::from_millis(100))
+		.with_max_delay(Duration::from_secs(2))
+		.with_jitter()
+		.with_max_times(3);
+
+	let attempt = || async {
+		let resp = client
+			.post(&url)
+			.header(header::USER_AGENT, "idkit-rs")
+			.json(&body)
+			.send()
+			.await
+			.map_err(Error::Reqwest)?;
+
+		match resp.status() {
+			StatusCode::OK => Ok(()),
+			StatusCode::BAD_REQUEST => {
+				let err = resp.json::<ErrorResponse>().await.map_err(Error::Reqwest)?;
+				Err(Error::Verification(err))
 			},
-			action: action.to_string(),
-			merkle_root: proof.merkle_root,
-			nullifier_hash: proof.nullifier_hash,
-			verification_level: proof.verification_level,
-		})
-		.send()
+			status => {
+				let text = resp.text().await.unwrap_or_default();
+				Err(Error::InvalidResponse { status, body: text })
+			},
+		}
+	};
+
+	attempt
+		.retry(policy)
+		.sleep(tokio::time::sleep)
+		.when(
+			|e: &Error| matches!(e, Error::InvalidResponse { status, .. } if status.is_server_error()),
+		)
 		.await?;
 
-	match response.status() {
-		StatusCode::OK => Ok(()),
-		StatusCode::BAD_REQUEST => {
-			Err(Error::Verification(response.json::<ErrorResponse>().await?))
-		},
-		status => {
-			let body = response
-				.text()
-				.await
-				.unwrap_or_else(|e| format!("Failed to read body: {e}"));
-			Err(Error::InvalidResponse { status, body })
-		},
-	}
+	Ok(())
 }
