@@ -2,6 +2,7 @@ use aide::axum::{
 	routing::{get_with, post_with},
 	ApiRouter,
 };
+use axum::routing::post as axum_post;
 
 mod avatar;
 mod ens_gateway;
@@ -16,7 +17,7 @@ mod update_record;
 use avatar::{avatar, docs as avatar_docs};
 use ens_gateway::{docs as ens_gateway_docs, ens_gateway_get, ens_gateway_post};
 use http::Method;
-use profile_picture::{docs as profile_picture_docs, upload_profile_picture};
+use profile_picture::upload_profile_picture;
 use query_multiple::{docs as query_multiple_docs, query_multiple};
 use query_single::{docs as query_single_docs, query_single};
 use register_username::{docs as register_username_docs, register_username};
@@ -60,8 +61,5 @@ pub fn handler() -> ApiRouter {
 			"/search/:username",
 			get_with(search, search_docs).layer(cors),
 		)
-		.api_route(
-			"/profile-picture",
-			post_with(upload_profile_picture, profile_picture_docs),
-		)
+		.route("/profile-picture", axum_post(upload_profile_picture))
 }

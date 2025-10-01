@@ -1,13 +1,15 @@
 use aide::transform::TransformOperation;
+use alloy::primitives::{keccak256, PrimitiveSignature};
 use axum::{body::Bytes, extract::Multipart, http::StatusCode, Extension};
 use idkit::Proof;
+use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::Deserialize;
-use std::collections::HashMap;
-use tracing::{info, warn};
+use std::{collections::HashMap, str::FromStr};
+use tracing::{info, warn, Instrument};
 
 use crate::{
 	config::{ConfigExt, Db},
-	types::{Address, ErrorResponse, VerificationLevel as WrappedVerificationLevel},
+	types::{ErrorResponse, VerificationLevel as WrappedVerificationLevel},
 	verify,
 };
 
@@ -38,7 +40,7 @@ async fn extract_fields_from_multipart(
 struct ProfilePictureMetadata {
 	proof: String,
 	merkle_root: String,
-	address: Address,
+	address: String,
 	nullifier_hash: String,
 	verification_level: WrappedVerificationLevel,
 	signature: String,
@@ -48,6 +50,49 @@ struct ProfilePictureMetadata {
 struct ProfilePicturePayload {
 	metadata: ProfilePictureMetadata,
 	profile_picture_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VerifyingKeys {
+	verifying_keys: Vec<String>,
+}
+
+async fn verify_key_against_cache(
+	redis: &mut ConnectionManager,
+	recovered_verifying_key_bytes: &[u8],
+) -> bool {
+	let Ok(cached_data) = redis.get::<_, String>("verifying_keys").await else {
+		return false;
+	};
+
+	let Ok(record) = serde_json::from_str::<VerifyingKeys>(&cached_data) else {
+		warn!("failed to deserialize verifying key cache");
+		return false;
+	};
+
+	let key_known = record.verifying_keys.iter().any(|stored_key| {
+		let normalized = stored_key.trim().trim_start_matches("0x");
+		match hex::decode(normalized) {
+			Ok(bytes) => bytes.as_slice() == recovered_verifying_key_bytes,
+			Err(err) => {
+				warn!(
+					error = %err,
+					stored_key,
+					"failed to decode stored verifying key"
+				);
+				false
+			},
+		}
+	});
+
+	if !key_known {
+		warn!(
+			recovered_key = %hex::encode(recovered_verifying_key_bytes),
+			"recovered verifying key missing from cache"
+		);
+	}
+
+	key_known
 }
 
 impl ProfilePicturePayload {
@@ -88,24 +133,22 @@ impl ProfilePicturePayload {
 		}
 	}
 
-	fn address_checksum(&self) -> String {
-		self.metadata.address.to_checksum(None)
+	fn address_checksum(&self) -> &str {
+		&self.metadata.address
 	}
 
-	fn signature(&self) -> &str {
+	fn address(&self) -> &str {
+		&self.metadata.address
+	}
+
+	const fn signature(&self) -> &str {
 		self.metadata.signature.as_str()
 	}
 
-	fn nullifier_hash(&self) -> &str {
+	const fn nullifier_hash(&self) -> &str {
 		self.metadata.nullifier_hash.as_str()
 	}
 
-	#[allow(dead_code)]
-	fn metadata(&self) -> &ProfilePictureMetadata {
-		&self.metadata
-	}
-
-	#[allow(dead_code)]
 	fn image_bytes(&self) -> &[u8] {
 		&self.profile_picture_bytes
 	}
@@ -115,20 +158,29 @@ impl ProfilePicturePayload {
 pub async fn upload_profile_picture(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<Db>,
+	Extension(mut redis): Extension<ConnectionManager>,
 	multipart: Multipart,
 ) -> Result<StatusCode, ErrorResponse> {
 	let payload = ProfilePicturePayload::from_multipart(multipart).await?;
 	let profile_picture_len = payload.profile_picture_bytes.len();
 	let address_checksum = payload.address_checksum();
+	let address = payload.address();
+	let nullifier_hash = payload.nullifier_hash().to_owned();
+
+	info!(
+		nullifier_hash = %nullifier_hash,
+		address = %address_checksum,
+		bytes = profile_picture_len,
+		"processing profile picture upload"
+	);
 
 	let proof = payload.proof();
-	let signal = payload.signature().clone();
+	let signal = (nullifier_hash.as_str(), address_checksum.clone());
 
-	// Verify the Proof
 	if let Err(err) = verify::dev_portal_verify_proof(
 		proof,
 		config.wld_app_id.to_string(),
-		"username", // Action ID
+		"username",
 		signal,
 		config.developer_portal_url.clone(),
 	)
@@ -138,7 +190,7 @@ pub async fn upload_profile_picture(
 			verify::Error::Verification(e) => {
 				tracing::error!(
 					detail = %e.detail,
-					nullifier_hash = payload.nullifier_hash(),
+					nullifier_hash = %nullifier_hash,
 					address = %address_checksum,
 					"Profile picture verification error",
 				);
@@ -147,7 +199,7 @@ pub async fn upload_profile_picture(
 			other => {
 				tracing::error!(
 					error = %other,
-					nullifier_hash = payload.nullifier_hash(),
+					nullifier_hash = %nullifier_hash,
 					address = %address_checksum,
 					"Profile picture verification request failed",
 				);
@@ -157,11 +209,10 @@ pub async fn upload_profile_picture(
 
 		return Err(response);
 	}
-	let nullifier_hash = payload.nullifier_hash();
-	// There exists an index on nullifier hash.
+
 	let username_row = sqlx::query!(
 		"SELECT username FROM names WHERE nullifier_hash = $1 AND address = $2",
-		nullifier_hash,
+		&nullifier_hash,
 		&address_checksum
 	)
 	.fetch_optional(&db.read_only)
@@ -178,7 +229,45 @@ pub async fn upload_profile_picture(
 		));
 	};
 
-	// Verify the signature
+	let message_bytes = {
+		let mut data = Vec::with_capacity(address.len() + 1 + profile_picture_len);
+		data.extend_from_slice(address.as_bytes());
+		data.push(b'-');
+		data.extend_from_slice(payload.image_bytes());
+		data
+	};
+	let digest = keccak256(&message_bytes);
+
+	let signature_input = payload.signature();
+	let signature_str = signature_input
+		.strip_prefix("0x")
+		.unwrap_or(signature_input);
+	let signature = PrimitiveSignature::from_str(signature_str).map_err(|err| {
+		warn!(error = %err, "invalid signature payload");
+		ErrorResponse::validation_error("Invalid signature provided".to_string())
+	})?;
+
+	let recovered_verifying_key = signature.recover_from_prehash(&digest).map_err(|err| {
+		warn!(error = %err, "failed to recover verifying key from signature");
+		ErrorResponse::validation_error("Invalid signature provided".to_string())
+	})?;
+
+	let recovered_verifying_key_bytes = recovered_verifying_key.to_encoded_point(false).to_bytes();
+
+	let key_valid = verify_key_against_cache(&mut redis, &recovered_verifying_key_bytes).await;
+
+	if !key_valid {
+		return Err(ErrorResponse::validation_error(
+			"Invalid signature provided".to_string(),
+		));
+	}
+
+	info!(
+		nullifier_hash = %nullifier_hash,
+		address = %address_checksum,
+		username = record.username,
+		"profile picture metadata validated against stored record"
+	);
 
 	Ok(StatusCode::ACCEPTED)
 }
