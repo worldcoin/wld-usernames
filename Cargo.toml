@@ -9,7 +9,7 @@ repository = "https://github.com/worldcoin/wld-usernames"
 description = "Backend powering World App username registration and querying."
 
 [dependencies]
-axum = "0.7.9"
+axum = { version = "0.7.9", features = ["multipart"] }
 hex = "0.4.3"
 http = "1.2.0"
 idkit = "0.1.2"

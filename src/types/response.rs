@@ -32,7 +32,9 @@ impl From<Name> for UsernameRecord {
 			username: value.username,
 			address: Address(value.address.parse().unwrap()),
 			profile_picture_url: value.profile_picture_url.map(|url| url.parse().unwrap()),
-			minimized_profile_picture_url: value.minimized_profile_picture_url.map(|url| url.parse().unwrap()),
+			minimized_profile_picture_url: value
+				.minimized_profile_picture_url
+				.map(|url| url.parse().unwrap()),
 		}
 	}
 }
@@ -44,7 +46,9 @@ impl From<NameSearch> for UsernameRecord {
 			username: value.username,
 			address: Address(value.address.parse().unwrap()),
 			profile_picture_url: value.profile_picture_url.map(|url| url.parse().unwrap()),
-			minimized_profile_picture_url: value.minimized_profile_picture_url.map(|url| url.parse().unwrap()),
+			minimized_profile_picture_url: value
+				.minimized_profile_picture_url
+				.map(|url| url.parse().unwrap()),
 		}
 	}
 }

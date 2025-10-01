@@ -26,6 +26,16 @@ impl ErrorResponse {
 		}
 	}
 
+	pub fn bad_request<E>(error: E) -> Self
+	where
+		E: Into<String>,
+	{
+		Self {
+			error: error.into(),
+			status: StatusCode::BAD_REQUEST,
+		}
+	}
+
 	pub fn unauthorized(error: String) -> Self {
 		tracing::warn!("Unauthorized: {}", error);
 		Self {

@@ -114,3 +114,21 @@ pub struct ENSQueryPayload {
 	pub data: String,
 	pub sender: Address,
 }
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct UpdateProfilePicturePayload {
+	/// 0x-prefixed hex string of the World ID proof.
+	proof: String,
+	/// 0x-prefixed hex string of the World ID merkle root.
+	merkle_root: String,
+	/// The user's wallet address.
+	pub address: Address,
+	/// 0x-prefixed hex string of the World ID nullifier hash.
+	pub nullifier_hash: String,
+	/// World ID verification level the user holds.
+	pub verification_level: VerificationLevel,
+	/// Signature
+	pub signature: String,
+	/// The user's profile picture in bytes.
+	pub profile_picture_bytes: Vec<u8>,
+}
