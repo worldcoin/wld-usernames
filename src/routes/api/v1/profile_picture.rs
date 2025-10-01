@@ -1,5 +1,7 @@
 use aide::transform::TransformOperation;
 use alloy::primitives::{keccak256, PrimitiveSignature};
+use aws_config::BehaviorVersion;
+use aws_sdk_s3::{primitives::ByteStream, Client as S3Client};
 use axum::{body::Bytes, extract::Multipart, http::StatusCode, Extension};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use idkit::Proof;
@@ -326,12 +328,25 @@ pub async fn upload_profile_picture(
 		));
 	}
 
-	info!(
-		nullifier_hash = %nullifier_hash,
-		address = %address_checksum,
-		username = record.username,
-		"profile picture metadata validated against stored record"
-	);
+	// Upload to S3
+	let aws_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
+	let s3_client = S3Client::new(&aws_config);
+
+	let bucket_name = "wld-usernames-profile-pictures";
+	let object_key = format!("{}/profile.png", address);
+
+	s3_client
+		.put_object()
+		.bucket(bucket_name)
+		.key(&object_key)
+		.body(ByteStream::from(payload.image_bytes().to_vec()))
+		.content_type("image/png")
+		.send()
+		.await
+		.map_err(|err| {
+			warn!(error = %err, address = %address, "failed to upload profile picture to S3");
+			ErrorResponse::server_error("Failed to upload profile picture".to_string())
+		})?;
 
 	Ok(StatusCode::ACCEPTED)
 }

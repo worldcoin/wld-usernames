@@ -57,6 +57,7 @@ rustls = { version = "0.23.21", features = ["ring"] }
 aws-config = { version = "1.5.14", features = ["behavior-version-latest"] }
 aws-sdk-dynamodb = "1.60.0"
 aws-sdk-sqs = "1.17.0"
+aws-sdk-s3 = "1.106.0"
 uuid = { version = "1.7.0", features = ["serde", "v4"] }
 once_cell = "1.19.0"
 opensearch = { version = "2.2.0", features = ["aws-auth", "rustls-tls"] }
