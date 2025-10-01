@@ -114,19 +114,12 @@ impl ProfilePicturePayload {
 #[tracing::instrument(skip_all)]
 pub async fn upload_profile_picture(
 	Extension(config): ConfigExt,
-	Extension(_db): Extension<Db>,
+	Extension(db): Extension<Db>,
 	multipart: Multipart,
 ) -> Result<StatusCode, ErrorResponse> {
 	let payload = ProfilePicturePayload::from_multipart(multipart).await?;
 	let profile_picture_len = payload.profile_picture_bytes.len();
 	let address_checksum = payload.address_checksum();
-
-	info!(
-		nullifier_hash = payload.nullifier_hash(),
-		address = %address_checksum,
-		bytes = profile_picture_len,
-		"received profile picture upload request"
-	);
 
 	let proof = payload.proof();
 	let signal = payload.signature().clone();
@@ -164,7 +157,26 @@ pub async fn upload_profile_picture(
 
 		return Err(response);
 	}
-	// Check that the address corresponds to this nullifier hash in the database
+	let nullifier_hash = payload.nullifier_hash();
+	// There exists an index on nullifier hash.
+	let username_row = sqlx::query!(
+		"SELECT username FROM names WHERE nullifier_hash = $1 AND address = $2",
+		nullifier_hash,
+		&address_checksum
+	)
+	.fetch_optional(&db.read_only)
+	.instrument(tracing::info_span!(
+		"profile_picture_lookup",
+		nullifier_hash,
+		address = %address_checksum
+	))
+	.await?;
+
+	let Some(record) = username_row else {
+		return Err(ErrorResponse::validation_error(
+			"No record found matching provided credentials".to_string(),
+		));
+	};
 
 	// Verify the signature
 
