@@ -11,7 +11,7 @@ use tracing::{info, warn, Instrument};
 use crate::{
 	config::{ConfigExt, Db},
 	types::{ErrorResponse, VerificationLevel as WrappedVerificationLevel},
-	verify,
+	verify,	
 };
 
 const FIELD_METADATA: &str = "metadata";
@@ -69,8 +69,7 @@ async fn verify_key_against_db(
 
 	let keys_str = sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
 		.fetch_one(&db.read_only)
-		.await?
-		.unwrap_or_default();
+		.await?;
 
 	if keys_str.is_empty() {
 		return Ok(false);
@@ -85,8 +84,7 @@ async fn add_signing_key_to_db(db: &Db, public_key_hex: &str) -> Result<(), Erro
 	// Fetch current keys
 	let keys_str = sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
 		.fetch_one(&db.read_write)
-		.await?
-		.unwrap_or_default();
+		.await?;
 
 	let mut keys: Vec<&str> = if keys_str.is_empty() {
 		Vec::new()
@@ -179,7 +177,6 @@ impl ProfilePicturePayload {
 pub async fn upload_profile_picture(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<Db>,
-	Extension(mut redis): Extension<ConnectionManager>,
 	multipart: Multipart,
 ) -> Result<StatusCode, ErrorResponse> {
 	let payload = ProfilePicturePayload::from_multipart(multipart).await?;
