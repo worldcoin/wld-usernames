@@ -10,10 +10,12 @@ use serde::Deserialize;
 use std::{collections::HashMap, str::FromStr};
 use tracing::{info, warn, Instrument};
 
+use std::sync::Arc;
+
 use crate::{
-	config::{ConfigExt, Db},
+	config::{Config, ConfigExt, Db},
 	types::{ErrorResponse, VerificationLevel as WrappedVerificationLevel},
-	verify,	
+	verify,
 };
 
 const FIELD_METADATA: &str = "metadata";
@@ -116,6 +118,228 @@ async fn add_signing_key_to_db(db: &Db, public_key_hex: &str) -> Result<(), Erro
 	Ok(())
 }
 
+struct ProfilePictureUploadHandler {
+	config: Arc<Config>,
+	db: Db,
+	payload: ProfilePicturePayload,
+}
+
+impl ProfilePictureUploadHandler {
+	fn new(config: Arc<Config>, db: Db, payload: ProfilePicturePayload) -> Self {
+		Self { config, db, payload }
+	}
+
+	async fn verify_world_id(&self) -> Result<(), ErrorResponse> {
+		let proof = self.payload.proof();
+		let signal = (
+			self.payload.nullifier_hash(),
+			self.payload.address_checksum(),
+		);
+
+		if let Err(err) = verify::dev_portal_verify_proof(
+			proof,
+			self.config.wld_app_id.to_string(),
+			"username",
+			signal,
+			self.config.developer_portal_url.clone(),
+		)
+		.await
+		{
+			let response = match err {
+				verify::Error::Verification(e) => {
+					tracing::error!(
+						detail = %e.detail,
+						nullifier_hash = %self.payload.nullifier_hash(),
+						address = %self.payload.address_checksum(),
+						"Profile picture verification error",
+					);
+					ErrorResponse::validation_error(e.detail)
+				},
+				other => {
+					tracing::error!(
+						error = %other,
+						nullifier_hash = %self.payload.nullifier_hash(),
+						address = %self.payload.address_checksum(),
+						"Profile picture verification request failed",
+					);
+					ErrorResponse::server_error("Failed to verify World ID proof".to_string())
+				},
+			};
+
+			return Err(response);
+		}
+
+		Ok(())
+	}
+
+	async fn verify_username_exists(&self) -> Result<String, ErrorResponse> {
+		let username_row = sqlx::query!(
+			"SELECT username FROM names WHERE nullifier_hash = $1 AND address = $2",
+			self.payload.nullifier_hash(),
+			self.payload.address_checksum()
+		)
+		.fetch_optional(&self.db.read_only)
+		.instrument(tracing::info_span!(
+			"profile_picture_lookup",
+			nullifier_hash = %self.payload.nullifier_hash(),
+			address = %self.payload.address_checksum()
+		))
+		.await?;
+
+		let Some(record) = username_row else {
+			return Err(ErrorResponse::validation_error(
+				"No record found matching provided credentials".to_string(),
+			));
+		};
+
+		Ok(record.username)
+	}
+
+	fn recover_signature(&self) -> Result<Vec<u8>, ErrorResponse> {
+		let address = self.payload.address();
+		let profile_picture_len = self.payload.image_bytes().len();
+
+		let message_bytes = {
+			let mut data = Vec::with_capacity(address.len() + 1 + profile_picture_len);
+			data.extend_from_slice(address.as_bytes());
+			data.push(b'-');
+			data.extend_from_slice(self.payload.image_bytes());
+			data
+		};
+		let digest = keccak256(&message_bytes);
+
+		let signature_input = self.payload.signature();
+		let signature_str = signature_input
+			.strip_prefix("0x")
+			.unwrap_or(signature_input);
+		let signature = PrimitiveSignature::from_str(signature_str).map_err(|err| {
+			warn!(error = %err, "invalid signature payload");
+			ErrorResponse::validation_error("Invalid signature provided".to_string())
+		})?;
+
+		let recovered_verifying_key = signature.recover_from_prehash(&digest).map_err(|err| {
+			warn!(error = %err, "failed to recover verifying key from signature");
+			ErrorResponse::validation_error("Invalid signature provided".to_string())
+		})?;
+
+		let recovered_verifying_key_bytes =
+			recovered_verifying_key.to_encoded_point(false).to_bytes();
+
+		Ok(recovered_verifying_key_bytes.to_vec())
+	}
+
+	async fn verify_signature(&self, recovered_key_bytes: &[u8]) -> Result<(), ErrorResponse> {
+		let mut key_valid = verify_key_against_db(&self.db, recovered_key_bytes).await?;
+
+		// If not valid, fetch the current signing key from the DF service
+		if !key_valid {
+			let df_url = std::env::var("DF_URL").map_err(|_| {
+				warn!("DF_URL environment variable not set");
+				ErrorResponse::server_error("Configuration error".to_string())
+			})?;
+
+			let client = reqwest::Client::new();
+			let response = client
+				.get(format!("{}/v1/enclave/signing-key", df_url))
+				.send()
+				.await
+				.map_err(|err| {
+					warn!(error = %err, "failed to fetch signing key from DF service");
+					ErrorResponse::server_error("Failed to verify signature".to_string())
+				})?;
+
+			let signing_key_data: SigningKeyResponse = response.json().await.map_err(|err| {
+				warn!(error = %err, "failed to parse signing key response");
+				ErrorResponse::server_error("Failed to verify signature".to_string())
+			})?;
+
+			// TODO: Verify the attestation before trusting the public key
+
+			// Decode the base64 public key
+			let df_public_key_bytes = STANDARD
+				.decode(&signing_key_data.public_key)
+				.map_err(|err| {
+					warn!(error = %err, "failed to decode base64 public key");
+					ErrorResponse::server_error("Failed to verify signature".to_string())
+				})?;
+
+			// Save the new key to DB
+			let df_public_key_hex = hex::encode(&df_public_key_bytes);
+			add_signing_key_to_db(&self.db, &df_public_key_hex).await?;
+
+			// Check if the recovered key matches the DF public key
+			if df_public_key_bytes.as_slice() == recovered_key_bytes {
+				key_valid = true;
+				info!(
+					public_key = %signing_key_data.public_key,
+					"verified signature against DF signing key"
+				);
+			}
+		}
+
+		if !key_valid {
+			return Err(ErrorResponse::validation_error(
+				"Invalid signature provided".to_string(),
+			));
+		}
+
+		Ok(())
+	}
+
+	async fn upload_to_s3(&self) -> Result<(), ErrorResponse> {
+		let aws_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
+		let s3_client = S3Client::new(&aws_config);
+
+		let bucket_name = "wld-usernames-profile-pictures";
+		let object_key = format!("{}/profile.png", self.payload.address());
+
+		s3_client
+			.put_object()
+			.bucket(bucket_name)
+			.key(&object_key)
+			.body(ByteStream::from(self.payload.image_bytes().to_vec()))
+			.content_type("image/png")
+			.send()
+			.await
+			.map_err(|err| {
+				warn!(error = %err, address = %self.payload.address(), "failed to upload profile picture to S3");
+				ErrorResponse::server_error("Failed to upload profile picture".to_string())
+			})?;
+
+		info!(
+			address = %self.payload.address(),
+			bucket = bucket_name,
+			key = %object_key,
+			"profile picture uploaded to S3"
+		);
+
+		Ok(())
+	}
+
+	async fn execute(self) -> Result<StatusCode, ErrorResponse> {
+		info!(
+			nullifier_hash = %self.payload.nullifier_hash(),
+			address = %self.payload.address_checksum(),
+			bytes = self.payload.image_bytes().len(),
+			"processing profile picture upload"
+		);
+
+		self.verify_world_id().await?;
+		let username = self.verify_username_exists().await?;
+		let recovered_key = self.recover_signature()?;
+		self.verify_signature(&recovered_key).await?;
+		self.upload_to_s3().await?;
+
+		info!(
+			username = %username,
+			address = %self.payload.address(),
+			"profile picture uploaded successfully"
+		);
+
+		Ok(StatusCode::ACCEPTED)
+	}
+}
+
 impl ProfilePicturePayload {
 	async fn from_multipart(mut multipart: Multipart) -> Result<Self, ErrorResponse> {
 		let mut fields = extract_fields_from_multipart(&mut multipart).await?;
@@ -182,173 +406,9 @@ pub async fn upload_profile_picture(
 	multipart: Multipart,
 ) -> Result<StatusCode, ErrorResponse> {
 	let payload = ProfilePicturePayload::from_multipart(multipart).await?;
-	let profile_picture_len = payload.profile_picture_bytes.len();
-	let address_checksum = payload.address_checksum();
-	let address = payload.address();
-	let nullifier_hash = payload.nullifier_hash().to_owned();
-
-	info!(
-		nullifier_hash = %nullifier_hash,
-		address = %address_checksum,
-		bytes = profile_picture_len,
-		"processing profile picture upload"
-	);
-
-	let proof = payload.proof();
-	let signal = (nullifier_hash.as_str(), address_checksum.clone());
-
-	if let Err(err) = verify::dev_portal_verify_proof(
-		proof,
-		config.wld_app_id.to_string(),
-		"username",
-		signal,
-		config.developer_portal_url.clone(),
-	)
-	.await
-	{
-		let response = match err {
-			verify::Error::Verification(e) => {
-				tracing::error!(
-					detail = %e.detail,
-					nullifier_hash = %nullifier_hash,
-					address = %address_checksum,
-					"Profile picture verification error",
-				);
-				ErrorResponse::validation_error(e.detail)
-			},
-			other => {
-				tracing::error!(
-					error = %other,
-					nullifier_hash = %nullifier_hash,
-					address = %address_checksum,
-					"Profile picture verification request failed",
-				);
-				ErrorResponse::server_error("Failed to verify World ID proof".to_string())
-			},
-		};
-
-		return Err(response);
-	}
-
-	let username_row = sqlx::query!(
-		"SELECT username FROM names WHERE nullifier_hash = $1 AND address = $2",
-		&nullifier_hash,
-		&address_checksum
-	)
-	.fetch_optional(&db.read_only)
-	.instrument(tracing::info_span!(
-		"profile_picture_lookup",
-		nullifier_hash,
-		address = %address_checksum
-	))
-	.await?;
-
-	let Some(record) = username_row else {
-		return Err(ErrorResponse::validation_error(
-			"No record found matching provided credentials".to_string(),
-		));
-	};
-
-	let message_bytes = {
-		let mut data = Vec::with_capacity(address.len() + 1 + profile_picture_len);
-		data.extend_from_slice(address.as_bytes());
-		data.push(b'-');
-		data.extend_from_slice(payload.image_bytes());
-		data
-	};
-	let digest = keccak256(&message_bytes);
-
-	let signature_input = payload.signature();
-	let signature_str = signature_input
-		.strip_prefix("0x")
-		.unwrap_or(signature_input);
-	let signature = PrimitiveSignature::from_str(signature_str).map_err(|err| {
-		warn!(error = %err, "invalid signature payload");
-		ErrorResponse::validation_error("Invalid signature provided".to_string())
-	})?;
-
-	let recovered_verifying_key = signature.recover_from_prehash(&digest).map_err(|err| {
-		warn!(error = %err, "failed to recover verifying key from signature");
-		ErrorResponse::validation_error("Invalid signature provided".to_string())
-	})?;
-
-	let recovered_verifying_key_bytes = recovered_verifying_key.to_encoded_point(false).to_bytes();
-
-	let mut key_valid = verify_key_against_db(&db, &recovered_verifying_key_bytes).await?;
-
-	// If not valid, fetch the current signing key from the DF service
-	if !key_valid {
-		let df_url = std::env::var("DF_URL").map_err(|_| {
-			warn!("DF_URL environment variable not set");
-			ErrorResponse::server_error("Configuration error".to_string())
-		})?;
-
-		let client = reqwest::Client::new();
-		let response = client
-			.get(format!("{}/v1/enclave/signing-key", df_url))
-			.send()
-			.await
-			.map_err(|err| {
-				warn!(error = %err, "failed to fetch signing key from DF service");
-				ErrorResponse::server_error("Failed to verify signature".to_string())
-			})?;
-
-		let signing_key_data: SigningKeyResponse = response.json().await.map_err(|err| {
-			warn!(error = %err, "failed to parse signing key response");
-			ErrorResponse::server_error("Failed to verify signature".to_string())
-		})?;
-
-		// TODO: Verify the attestation before trusting the public key
-
-		// Decode the base64 public key
-		let df_public_key_bytes = STANDARD
-			.decode(&signing_key_data.public_key)
-			.map_err(|err| {
-				warn!(error = %err, "failed to decode base64 public key");
-				ErrorResponse::server_error("Failed to verify signature".to_string())
-			})?;
-
-		// Save the new key to DynamoDB
-		let df_public_key_hex = hex::encode(&df_public_key_bytes);
-		add_signing_key_to_db(&db, &df_public_key_hex).await?;
-
-		// Check if the recovered key matches the DF public key
-		if df_public_key_bytes.as_slice() == recovered_verifying_key_bytes.as_ref() {
-			key_valid = true;
-			info!(
-				public_key = %signing_key_data.public_key,
-				"verified signature against DF signing key"
-			);
-		}
-	}
-
-	if !key_valid {
-		return Err(ErrorResponse::validation_error(
-			"Invalid signature provided".to_string(),
-		));
-	}
-
-	// Upload to S3
-	let aws_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
-	let s3_client = S3Client::new(&aws_config);
-
-	let bucket_name = "wld-usernames-profile-pictures";
-	let object_key = format!("{}/profile.png", address);
-
-	s3_client
-		.put_object()
-		.bucket(bucket_name)
-		.key(&object_key)
-		.body(ByteStream::from(payload.image_bytes().to_vec()))
-		.content_type("image/png")
-		.send()
+	ProfilePictureUploadHandler::new(config.0, db, payload)
+		.execute()
 		.await
-		.map_err(|err| {
-			warn!(error = %err, address = %address, "failed to upload profile picture to S3");
-			ErrorResponse::server_error("Failed to upload profile picture".to_string())
-		})?;
-
-	Ok(StatusCode::ACCEPTED)
 }
 
 pub fn docs(op: TransformOperation) -> TransformOperation {
