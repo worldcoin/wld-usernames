@@ -6479,6 +6479,7 @@ dependencies = [
  "axum",
  "axum-jsonschema",
  "backon",
+ "base64 0.22.1",
  "chrono",
  "datadog-tracing",
  "dotenvy",

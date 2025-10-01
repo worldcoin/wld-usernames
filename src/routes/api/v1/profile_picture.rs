@@ -1,6 +1,7 @@
 use aide::transform::TransformOperation;
 use alloy::primitives::{keccak256, PrimitiveSignature};
 use axum::{body::Bytes, extract::Multipart, http::StatusCode, Extension};
+use base64::{engine::general_purpose::STANDARD, Engine};
 use idkit::Proof;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::Deserialize;
@@ -53,46 +54,66 @@ struct ProfilePicturePayload {
 }
 
 #[derive(Debug, Deserialize)]
-struct VerifyingKeys {
-	verifying_keys: Vec<String>,
+struct SigningKeyResponse {
+	attestation: String,
+	public_key: String,
 }
 
-async fn verify_key_against_cache(
-	redis: &mut ConnectionManager,
+const MAX_SIGNING_KEYS: usize = 5;
+
+async fn verify_key_against_db(
+	db: &Db,
 	recovered_verifying_key_bytes: &[u8],
-) -> bool {
-	let Ok(cached_data) = redis.get::<_, String>("verifying_keys").await else {
-		return false;
-	};
+) -> Result<bool, ErrorResponse> {
+	let recovered_key_hex = hex::encode(recovered_verifying_key_bytes);
 
-	let Ok(record) = serde_json::from_str::<VerifyingKeys>(&cached_data) else {
-		warn!("failed to deserialize verifying key cache");
-		return false;
-	};
+	let keys_str = sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
+		.fetch_one(&db.read_only)
+		.await?
+		.unwrap_or_default();
 
-	let key_known = record.verifying_keys.iter().any(|stored_key| {
-		let normalized = stored_key.trim().trim_start_matches("0x");
-		match hex::decode(normalized) {
-			Ok(bytes) => bytes.as_slice() == recovered_verifying_key_bytes,
-			Err(err) => {
-				warn!(
-					error = %err,
-					stored_key,
-					"failed to decode stored verifying key"
-				);
-				false
-			},
-		}
-	});
-
-	if !key_known {
-		warn!(
-			recovered_key = %hex::encode(recovered_verifying_key_bytes),
-			"recovered verifying key missing from cache"
-		);
+	if keys_str.is_empty() {
+		return Ok(false);
 	}
 
-	key_known
+	let key_exists = keys_str.split(',').any(|key| key == recovered_key_hex);
+
+	Ok(key_exists)
+}
+
+async fn add_signing_key_to_db(db: &Db, public_key_hex: &str) -> Result<(), ErrorResponse> {
+	// Fetch current keys
+	let keys_str = sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
+		.fetch_one(&db.read_write)
+		.await?
+		.unwrap_or_default();
+
+	let mut keys: Vec<&str> = if keys_str.is_empty() {
+		Vec::new()
+	} else {
+		keys_str.split(',').collect()
+	};
+
+	// Only add if not already present
+	if !keys.contains(&public_key_hex) {
+		keys.push(public_key_hex);
+
+		// Keep only the last 5 keys (remove oldest from front)
+		if keys.len() > MAX_SIGNING_KEYS {
+			keys = keys[keys.len() - MAX_SIGNING_KEYS..].to_vec();
+		}
+
+		let updated_keys = keys.join(",");
+
+		sqlx::query!(
+			"UPDATE verifying_keys SET keys = $1, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
+			updated_keys
+		)
+		.execute(&db.read_write)
+		.await?;
+	}
+
+	Ok(())
 }
 
 impl ProfilePicturePayload {
@@ -254,7 +275,53 @@ pub async fn upload_profile_picture(
 
 	let recovered_verifying_key_bytes = recovered_verifying_key.to_encoded_point(false).to_bytes();
 
-	let key_valid = verify_key_against_cache(&mut redis, &recovered_verifying_key_bytes).await;
+	let mut key_valid = verify_key_against_db(&db, &recovered_verifying_key_bytes).await?;
+
+	// If not valid, fetch the current signing key from the DF service
+	if !key_valid {
+		let df_url = std::env::var("DF_URL").map_err(|_| {
+			warn!("DF_URL environment variable not set");
+			ErrorResponse::server_error("Configuration error".to_string())
+		})?;
+
+		let client = reqwest::Client::new();
+		let response = client
+			.get(format!("{}/v1/enclave/signing-key", df_url))
+			.send()
+			.await
+			.map_err(|err| {
+				warn!(error = %err, "failed to fetch signing key from DF service");
+				ErrorResponse::server_error("Failed to verify signature".to_string())
+			})?;
+
+		let signing_key_data: SigningKeyResponse = response.json().await.map_err(|err| {
+			warn!(error = %err, "failed to parse signing key response");
+			ErrorResponse::server_error("Failed to verify signature".to_string())
+		})?;
+
+		// TODO: Verify the attestation before trusting the public key
+
+		// Decode the base64 public key
+		let df_public_key_bytes = STANDARD
+			.decode(&signing_key_data.public_key)
+			.map_err(|err| {
+				warn!(error = %err, "failed to decode base64 public key");
+				ErrorResponse::server_error("Failed to verify signature".to_string())
+			})?;
+
+		// Save the new key to DynamoDB
+		let df_public_key_hex = hex::encode(&df_public_key_bytes);
+		add_signing_key_to_db(&db, &df_public_key_hex).await?;
+
+		// Check if the recovered key matches the DF public key
+		if df_public_key_bytes.as_slice() == recovered_verifying_key_bytes.as_ref() {
+			key_valid = true;
+			info!(
+				public_key = %signing_key_data.public_key,
+				"verified signature against DF signing key"
+			);
+		}
+	}
 
 	if !key_valid {
 		return Err(ErrorResponse::validation_error(
