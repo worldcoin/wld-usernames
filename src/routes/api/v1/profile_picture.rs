@@ -386,18 +386,12 @@ impl ProfilePictureUploadHandler {
 		);
 
 		self.verify_world_id().await?;
-		let username = self.verify_username_exists().await?;
+		self.verify_username_exists().await?;
 		let recovered_key = self.recover_signature()?;
 		self.verify_signature(&recovered_key).await?;
 		self.upload_to_s3().await?;
 
 		// TODO: Update username record with the profile picture url
-
-		info!(
-			username = %username,
-			address = %self.payload.address(),
-			"profile picture uploaded successfully"
-		);
 
 		Ok(StatusCode::ACCEPTED)
 	}
@@ -472,10 +466,4 @@ pub async fn upload_profile_picture(
 	ProfilePictureUploadHandler::new(config, db, payload)
 		.execute()
 		.await
-}
-
-pub fn docs(op: TransformOperation) -> TransformOperation {
-	op.description(
-        "Upload or update a profile picture using multipart/form-data. Expect a `metadata` JSON part containing proof context and a `profile_picture` binary part with the image bytes.",
-    )
 }
