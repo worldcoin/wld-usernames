@@ -315,7 +315,7 @@ impl ProfilePictureUploadHandler {
 						uncompressed.extend_from_slice(&df_public_key_bytes);
 						VerifyingKey::from_sec1_bytes(&uncompressed)
 					} else {
-						Err(k256::elliptic_curve::Error)
+						Err(k256::elliptic_curve::Error::new())
 					}
 				})
 				.map_err(|err| {
