@@ -5,7 +5,8 @@ use aws_sdk_s3::{primitives::ByteStream, Client as S3Client};
 use axum::{body::Bytes, extract::Multipart, http::StatusCode, Extension};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use idkit::Proof;
-use redis::{aio::ConnectionManager, AsyncCommands};
+use k256::elliptic_curve::sec1::ToEncodedPoint;
+use k256::PublicKey as VerifyingKey;
 use serde::Deserialize;
 use std::{collections::HashMap, str::FromStr};
 use tracing::{info, warn, Instrument};
@@ -69,8 +70,6 @@ async fn verify_key_against_db(
 	db: &Db,
 	recovered_verifying_key_bytes: &[u8],
 ) -> Result<bool, ErrorResponse> {
-	let recovered_key_hex = hex::encode(recovered_verifying_key_bytes);
-
 	let keys_str = sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
 		.fetch_one(&db.read_only)
 		.await?;
@@ -79,7 +78,33 @@ async fn verify_key_against_db(
 		return Ok(false);
 	}
 
-	let key_exists = keys_str.split(',').any(|key| key == recovered_key_hex);
+	// Parse the recovered key (should be uncompressed format)
+	let recovered_key = VerifyingKey::from_sec1_bytes(recovered_verifying_key_bytes)
+		.map_err(|_| ErrorResponse::server_error("Invalid recovered key format".to_string()))?;
+
+	let recovered_uncompressed = recovered_key.to_encoded_point(false).to_bytes();
+
+	// Check against each stored key (which might be compressed or uncompressed)
+	let key_exists = keys_str.split(',').any(|stored_key_hex| {
+		if let Ok(stored_key_bytes) = hex::decode(stored_key_hex) {
+			// Try to parse the stored key
+			if let Ok(stored_key) = VerifyingKey::from_sec1_bytes(&stored_key_bytes).or_else(|_| {
+				// Handle 64-byte format
+				if stored_key_bytes.len() == 64 {
+					let mut uncompressed = Vec::with_capacity(65);
+					uncompressed.push(0x04);
+					uncompressed.extend_from_slice(&stored_key_bytes);
+					VerifyingKey::from_sec1_bytes(&uncompressed)
+				} else {
+					Err(k256::elliptic_curve::Error)
+				}
+			}) {
+				let stored_uncompressed = stored_key.to_encoded_point(false).to_bytes();
+				return &*stored_uncompressed == &*recovered_uncompressed;
+			}
+		}
+		false
+	});
 
 	Ok(key_exists)
 }
@@ -126,17 +151,18 @@ struct ProfilePictureUploadHandler {
 
 impl ProfilePictureUploadHandler {
 	fn new(config: Arc<Config>, db: Db, payload: ProfilePicturePayload) -> Self {
-		Self { config, db, payload }
+		Self {
+			config,
+			db,
+			payload,
+		}
 	}
 
 	async fn verify_world_id(&self) -> Result<(), ErrorResponse> {
 		let proof = self.payload.proof();
-		let signal = (
-			self.payload.nullifier_hash(),
-			self.payload.address_checksum(),
-		);
+		let signal = self.payload.signature();
 
-		if let Err(err) = verify::dev_portal_verify_proof(
+		if let Err(err) = verify::dev_portal_verify_proof_hex(
 			proof,
 			self.config.wld_app_id.to_string(),
 			"username",
@@ -199,6 +225,7 @@ impl ProfilePictureUploadHandler {
 		let address = self.payload.address();
 		let profile_picture_len = self.payload.image_bytes().len();
 
+		// Hash: wallet_address + "-" + image_bytes (matching reference implementation)
 		let message_bytes = {
 			let mut data = Vec::with_capacity(address.len() + 1 + profile_picture_len);
 			data.extend_from_slice(address.as_bytes());
@@ -212,14 +239,30 @@ impl ProfilePictureUploadHandler {
 		let signature_str = signature_input
 			.strip_prefix("0x")
 			.unwrap_or(signature_input);
-		let signature = PrimitiveSignature::from_str(signature_str).map_err(|err| {
-			warn!(error = %err, "invalid signature payload");
-			ErrorResponse::validation_error("Invalid signature provided".to_string())
+
+		// Decode the hex signature (should be 65 bytes: 64-byte signature + 1-byte recovery ID)
+		let signature_bytes = hex::decode(signature_str).map_err(|err| {
+			warn!(error = %err, "invalid signature hex encoding");
+			ErrorResponse::validation_error("Invalide signature provided".to_string())
 		})?;
 
+		if signature_bytes.len() != 65 {
+			warn!(len = signature_bytes.len(), "signature must be 65 bytes");
+			return Err(ErrorResponse::validation_error(
+				"Invalid signature length".to_string(),
+			));
+		}
+
+		let signature =
+			PrimitiveSignature::try_from(signature_bytes.as_slice()).map_err(|err| {
+				warn!(error = %err, "invalid signature payload");
+				ErrorResponse::validation_error("Invalid signature bytes provided".to_string())
+			})?;
+
+		// recover_from_prehash expects the 32-byte hash
 		let recovered_verifying_key = signature.recover_from_prehash(&digest).map_err(|err| {
 			warn!(error = %err, "failed to recover verifying key from signature");
-			ErrorResponse::validation_error("Invalid signature provided".to_string())
+			ErrorResponse::validation_error("Unable to recover signature".to_string())
 		})?;
 
 		let recovered_verifying_key_bytes =
@@ -252,23 +295,43 @@ impl ProfilePictureUploadHandler {
 				warn!(error = %err, "failed to parse signing key response");
 				ErrorResponse::server_error("Failed to verify signature".to_string())
 			})?;
-
 			// TODO: Verify the attestation before trusting the public key
 
 			// Decode the base64 public key
-			let df_public_key_bytes = STANDARD
-				.decode(&signing_key_data.public_key)
+			let df_public_key_bytes =
+				STANDARD
+					.decode(&signing_key_data.public_key)
+					.map_err(|err| {
+						warn!(error = %err, "failed to decode base64 public key");
+						ErrorResponse::server_error("Failed to verify signature".to_string())
+					})?;
+
+			// Convert DF public key to uncompressed format for comparison
+			let df_verifying_key = VerifyingKey::from_sec1_bytes(&df_public_key_bytes)
+				.or_else(|_| {
+					// If it's 64 bytes, try adding the 0x04 prefix for uncompressed format
+					if df_public_key_bytes.len() == 64 {
+						let mut uncompressed = Vec::with_capacity(65);
+						uncompressed.push(0x04);
+						uncompressed.extend_from_slice(&df_public_key_bytes);
+						VerifyingKey::from_sec1_bytes(&uncompressed)
+					} else {
+						Err(k256::elliptic_curve::Error)
+					}
+				})
 				.map_err(|err| {
-					warn!(error = %err, "failed to decode base64 public key");
+					warn!(error = ?err, "failed to parse DF public key");
 					ErrorResponse::server_error("Failed to verify signature".to_string())
 				})?;
 
-			// Save the new key to DB
+			let df_uncompressed_bytes = df_verifying_key.to_encoded_point(false).to_bytes();
+
+			// Save the new key to DB (store in the original format from DF)
 			let df_public_key_hex = hex::encode(&df_public_key_bytes);
 			add_signing_key_to_db(&self.db, &df_public_key_hex).await?;
 
-			// Check if the recovered key matches the DF public key
-			if df_public_key_bytes.as_slice() == recovered_key_bytes {
+			// Compare uncompressed formats
+			if &*df_uncompressed_bytes == recovered_key_bytes {
 				key_valid = true;
 				info!(
 					public_key = %signing_key_data.public_key,
@@ -279,7 +342,7 @@ impl ProfilePictureUploadHandler {
 
 		if !key_valid {
 			return Err(ErrorResponse::validation_error(
-				"Invalid signature provided".to_string(),
+				"Signature did not match any keys".to_string(),
 			));
 		}
 
@@ -406,7 +469,7 @@ pub async fn upload_profile_picture(
 	multipart: Multipart,
 ) -> Result<StatusCode, ErrorResponse> {
 	let payload = ProfilePicturePayload::from_multipart(multipart).await?;
-	ProfilePictureUploadHandler::new(config.0, db, payload)
+	ProfilePictureUploadHandler::new(config, db, payload)
 		.execute()
 		.await
 }

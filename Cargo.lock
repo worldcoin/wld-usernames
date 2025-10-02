@@ -3392,6 +3392,7 @@ dependencies = [
  "elliptic-curve 0.13.8",
  "once_cell",
  "sha2",
+ "signature 2.2.0",
 ]
 
 [[package]]
@@ -6843,6 +6844,7 @@ dependencies = [
  "hex",
  "http 1.2.0",
  "idkit",
+ "k256",
  "log-panics",
  "num-traits",
  "once_cell",
