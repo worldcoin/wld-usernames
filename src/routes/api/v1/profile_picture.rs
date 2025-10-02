@@ -71,54 +71,39 @@ async fn verify_key_against_db(
 	recovered_verifying_key_bytes: &[u8],
 ) -> Result<bool, ErrorResponse> {
 	let keys_str = sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
-		.fetch_one(&db.read_only)
+		.fetch_optional(&db.read_only)
 		.await?;
+
+	// If no row exists or keys are empty, return false
+	let Some(keys_str) = keys_str else {
+		return Ok(false);
+	};
 
 	if keys_str.is_empty() {
 		return Ok(false);
 	}
 
-	// Parse the recovered key (should be uncompressed format)
-	let recovered_key = VerifyingKey::from_sec1_bytes(recovered_verifying_key_bytes)
-		.map_err(|_| ErrorResponse::server_error("Invalid recovered key format".to_string()))?;
-
-	let recovered_uncompressed = recovered_key.to_encoded_point(false).to_bytes();
-
-	// Check against each stored key (which might be compressed or uncompressed)
-	let key_exists = keys_str.split(',').any(|stored_key_hex| {
-		if let Ok(stored_key_bytes) = hex::decode(stored_key_hex) {
-			// Try to parse the stored key
-			if let Ok(stored_key) = VerifyingKey::from_sec1_bytes(&stored_key_bytes).or_else(|_| {
-				// Handle 64-byte format
-				if stored_key_bytes.len() == 64 {
-					let mut uncompressed = Vec::with_capacity(65);
-					uncompressed.push(0x04);
-					uncompressed.extend_from_slice(&stored_key_bytes);
-					VerifyingKey::from_sec1_bytes(&uncompressed)
-				} else {
-					Err(k256::elliptic_curve::Error)
-				}
-			}) {
-				let stored_uncompressed = stored_key.to_encoded_point(false).to_bytes();
-				return &*stored_uncompressed == &*recovered_uncompressed;
-			}
-		}
-		false
-	});
+	// All keys are stored in uncompressed format (65 bytes), so we can do direct comparison
+	let recovered_key_hex = hex::encode(recovered_verifying_key_bytes);
+	let key_exists = keys_str.split(',').any(|stored_key_hex| stored_key_hex == recovered_key_hex);
 
 	Ok(key_exists)
 }
 
 async fn add_signing_key_to_db(db: &Db, public_key_hex: &str) -> Result<(), ErrorResponse> {
-	// Fetch current keys
+	// Fetch current keys (or None if row doesn't exist)
 	let keys_str = sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
-		.fetch_one(&db.read_write)
+		.fetch_optional(&db.read_write)
 		.await?;
 
-	let mut keys: Vec<&str> = if keys_str.is_empty() {
-		Vec::new()
+	let mut keys: Vec<&str> = if let Some(ref keys_str) = keys_str {
+		if keys_str.is_empty() {
+			Vec::new()
+		} else {
+			keys_str.split(',').collect()
+		}
 	} else {
-		keys_str.split(',').collect()
+		Vec::new()
 	};
 
 	// Only add if not already present
@@ -132,12 +117,24 @@ async fn add_signing_key_to_db(db: &Db, public_key_hex: &str) -> Result<(), Erro
 
 		let updated_keys = keys.join(",");
 
-		sqlx::query!(
-			"UPDATE verifying_keys SET keys = $1, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
-			updated_keys
-		)
-		.execute(&db.read_write)
-		.await?;
+		if keys_str.is_some() {
+			// Update existing row
+			sqlx::query!(
+				"UPDATE verifying_keys SET keys = $1, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
+				updated_keys
+			)
+			.execute(&db.read_write)
+			.await?;
+		} else {
+			// Insert new row
+			sqlx::query!(
+				"INSERT INTO verifying_keys (id, keys) VALUES (1, $1)
+				ON CONFLICT (id) DO UPDATE SET keys = $1, updated_at = CURRENT_TIMESTAMP",
+				updated_keys
+			)
+			.execute(&db.read_write)
+			.await?;
+		}
 	}
 
 	Ok(())
@@ -297,7 +294,7 @@ impl ProfilePictureUploadHandler {
 			})?;
 			// TODO: Verify the attestation before trusting the public key
 
-			// Decode the base64 public key
+			// Decode the base64 public key from DF service
 			let df_public_key_bytes =
 				STANDARD
 					.decode(&signing_key_data.public_key)
@@ -306,10 +303,10 @@ impl ProfilePictureUploadHandler {
 						ErrorResponse::server_error("Failed to verify signature".to_string())
 					})?;
 
-			// Convert DF public key to uncompressed format for comparison
+			// Parse and normalize to uncompressed format (65 bytes)
 			let df_verifying_key = VerifyingKey::from_sec1_bytes(&df_public_key_bytes)
 				.or_else(|_| {
-					// If it's 64 bytes, try adding the 0x04 prefix for uncompressed format
+					// Handle 64-byte format (add 0x04 prefix)
 					if df_public_key_bytes.len() == 64 {
 						let mut uncompressed = Vec::with_capacity(65);
 						uncompressed.push(0x04);
@@ -324,13 +321,12 @@ impl ProfilePictureUploadHandler {
 					ErrorResponse::server_error("Failed to verify signature".to_string())
 				})?;
 
+			// Always store in uncompressed format for consistent comparison
 			let df_uncompressed_bytes = df_verifying_key.to_encoded_point(false).to_bytes();
+			let df_uncompressed_hex = hex::encode(&*df_uncompressed_bytes);
+			add_signing_key_to_db(&self.db, &df_uncompressed_hex).await?;
 
-			// Save the new key to DB (store in the original format from DF)
-			let df_public_key_hex = hex::encode(&df_public_key_bytes);
-			add_signing_key_to_db(&self.db, &df_public_key_hex).await?;
-
-			// Compare uncompressed formats
+			// Direct byte comparison (both are uncompressed)
 			if &*df_uncompressed_bytes == recovered_key_bytes {
 				key_valid = true;
 				info!(
