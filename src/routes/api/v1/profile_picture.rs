@@ -202,7 +202,7 @@ impl ProfilePictureUploadHandler {
 			self.payload.nullifier_hash(),
 			self.payload.address_checksum()
 		)
-		.fetch_optional(&self.db.read_only)
+		.fetch_optional(&self.db.read_write)
 		.instrument(tracing::info_span!(
 			"profile_picture_lookup",
 			nullifier_hash = %self.payload.nullifier_hash(),
