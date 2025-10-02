@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS verifying_keys (
+    id INTEGER PRIMARY KEY,
+    keys VARCHAR(1000) NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert initial row
+INSERT INTO verifying_keys (id, keys) VALUES (1, '')
+ON CONFLICT (id) DO NOTHING;
