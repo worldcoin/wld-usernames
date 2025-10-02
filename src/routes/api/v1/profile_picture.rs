@@ -242,7 +242,7 @@ impl ProfilePictureUploadHandler {
 		// Decode the hex signature (should be 65 bytes: 64-byte signature + 1-byte recovery ID)
 		let signature_bytes = hex::decode(signature_str).map_err(|err| {
 			warn!(error = %err, "invalid signature hex encoding");
-			ErrorResponse::validation_error("Invalide signature provided".to_string())
+			ErrorResponse::validation_error("Invalid signature provided".to_string())
 		})?;
 
 		if signature_bytes.len() != 65 {
