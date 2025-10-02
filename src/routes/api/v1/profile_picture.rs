@@ -85,7 +85,9 @@ async fn verify_key_against_db(
 
 	// All keys are stored in uncompressed format (65 bytes), so we can do direct comparison
 	let recovered_key_hex = hex::encode(recovered_verifying_key_bytes);
-	let key_exists = keys_str.split(',').any(|stored_key_hex| stored_key_hex == recovered_key_hex);
+	let key_exists = keys_str
+		.split(',')
+		.any(|stored_key_hex| stored_key_hex == recovered_key_hex);
 
 	Ok(key_exists)
 }
@@ -388,6 +390,8 @@ impl ProfilePictureUploadHandler {
 		let recovered_key = self.recover_signature()?;
 		self.verify_signature(&recovered_key).await?;
 		self.upload_to_s3().await?;
+
+		// TODO: Update username record with the profile picture url
 
 		info!(
 			username = %username,
