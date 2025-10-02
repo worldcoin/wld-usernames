@@ -467,9 +467,3 @@ pub async fn upload_profile_picture(
 		.execute()
 		.await
 }
-
-pub fn docs(op: TransformOperation) -> TransformOperation {
-	op.description(
-		"Upload or update a profile picture using multipart/form-data. Expects a `metadata` JSON part containing proof context and a `profile_picture` binary part with the image bytes.",
-	)
-}
