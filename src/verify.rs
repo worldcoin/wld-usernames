@@ -100,9 +100,9 @@ async fn verify_proof_internal(
 
 	let body = VerificationRequest {
 		action: action.to_owned(),
-		proof: proof.proof.clone(),
-		merkle_root: proof.merkle_root.clone(),
-		nullifier_hash: proof.nullifier_hash.clone(),
+		proof: proof.proof,
+		merkle_root: proof.merkle_root,
+		nullifier_hash: proof.nullifier_hash,
 		verification_level: proof.verification_level,
 		signal_hash,
 	};
