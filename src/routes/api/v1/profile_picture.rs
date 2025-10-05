@@ -1,5 +1,5 @@
 use aide::transform::TransformOperation;
-use alloy::primitives::{keccak256, PrimitiveSignature};
+use alloy::primitives::{Keccak256, PrimitiveSignature};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{primitives::ByteStream, Client as S3Client};
 use axum::{body::Bytes, extract::Multipart, http::StatusCode, Extension};
@@ -237,17 +237,29 @@ impl ProfilePictureUploadHandler {
 
 	fn recover_signature(&self) -> Result<Vec<u8>, ErrorResponse> {
 		let address = self.payload.address();
-		let profile_picture_len = self.payload.image_bytes().len();
 
-		// Hash: wallet_address + "-" + image_bytes (matching reference implementation)
-		let message_bytes = {
-			let mut data = Vec::with_capacity(address.len() + 1 + profile_picture_len);
-			data.extend_from_slice(address.as_bytes());
-			data.push(b'-');
-			data.extend_from_slice(self.payload.image_bytes());
-			data
+		// Parse wallet address to bytes (strip 0x if present, decode hex)
+		let wallet_address_bytes = {
+			let addr = address.trim_start_matches("0x");
+			hex::decode(addr).map_err(|err| {
+				warn!(error = %err, "invalid wallet address hex");
+				ErrorResponse::validation_error("Invalid wallet address".to_string())
+			})?
 		};
-		let digest = keccak256(&message_bytes);
+
+		if wallet_address_bytes.len() != 20 {
+			warn!(len = wallet_address_bytes.len(), "wallet address must be 20 bytes");
+			return Err(ErrorResponse::validation_error(
+				"Invalid wallet address length".to_string(),
+			));
+		}
+
+		// Hash: wallet_address_bytes + "-" + image_bytes (matching reference implementation)
+		let mut hasher = Keccak256::new();
+		hasher.update(&wallet_address_bytes);
+		hasher.update(b"-");
+		hasher.update(self.payload.image_bytes());
+		let digest = hasher.finalize();
 
 		let signature_input = self.payload.signature();
 		let signature_str = signature_input
