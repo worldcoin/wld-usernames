@@ -22,6 +22,26 @@ use crate::{
 const FIELD_METADATA: &str = "metadata";
 const FIELD_PROFILE_PICTURE: &str = "profile_picture";
 
+fn detect_image_type(bytes: &[u8]) -> Result<&'static str, ()> {
+	if bytes.len() < 12 {
+		return Err(());
+	}
+
+	// Check magic bytes for supported formats
+	match bytes {
+		[0xFF, 0xD8, 0xFF, ..] => Ok("image/jpeg"),
+		[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, ..] => Ok("image/png"),
+		[0x52, 0x49, 0x46, 0x46, _, _, _, _, 0x57, 0x45, 0x42, 0x50, ..] => Ok("image/webp"),
+		// HEIC check (ftyp box with heic/heix/hevc/hevx brands)
+		[_, _, _, _, 0x66, 0x74, 0x79, 0x70, b'h', b'e', b'i', c, ..]
+			if *c == b'c' || *c == b'x' || *c == b's' || *c == b'm' =>
+		{
+			Ok("image/heic")
+		}
+		_ => Err(()),
+	}
+}
+
 async fn extract_fields_from_multipart(
 	multipart: &mut Multipart,
 ) -> Result<HashMap<String, Bytes>, ErrorResponse> {
@@ -32,11 +52,11 @@ async fn extract_fields_from_multipart(
 		ErrorResponse::bad_request("invalid_request_body")
 	})? {
 		let name = field.name().unwrap_or_default().to_string();
-		let value = field.bytes().await.map_err(|err| {
+		let bytes = field.bytes().await.map_err(|err| {
 			warn!("failed to read multipart field bytes: {err:#}");
 			ErrorResponse::bad_request("invalid_request_body")
 		})?;
-		fields.insert(name, value);
+		fields.insert(name, bytes);
 	}
 
 	Ok(fields)
@@ -339,14 +359,18 @@ impl ProfilePictureUploadHandler {
 		let s3_client = S3Client::new(&aws_config);
 
 		let bucket_name = "wld-usernames-profile-pictures";
-		let object_key = format!("{}/profile.png", self.payload.address());
+		let object_key = format!("{}/profile", self.payload.address());
+
+		// Detect content type from magic bytes
+		let content_type = detect_image_type(self.payload.image_bytes())
+			.map_err(|_| ErrorResponse::server_error("Failed to detect image type".to_string()))?;
 
 		s3_client
 			.put_object()
 			.bucket(bucket_name)
 			.key(&object_key)
 			.body(ByteStream::from(self.payload.image_bytes().to_vec()))
-			.content_type("image/png")
+			.content_type(content_type)
 			.send()
 			.await
 			.map_err(|err| {
@@ -358,6 +382,7 @@ impl ProfilePictureUploadHandler {
 			address = %self.payload.address(),
 			bucket = bucket_name,
 			key = %object_key,
+			content_type = content_type,
 			"profile picture uploaded to S3"
 		);
 
@@ -400,16 +425,22 @@ impl ProfilePicturePayload {
 		let profile_picture_bytes = fields
 			.remove(FIELD_PROFILE_PICTURE)
 			.or_else(|| fields.remove("profile_picture_bytes"))
-			.map(|bytes| bytes.to_vec())
 			.ok_or_else(|| {
 				ErrorResponse::validation_error(format!(
 					"Missing multipart field: {FIELD_PROFILE_PICTURE}"
 				))
 			})?;
 
+		// Validate the image type by checking magic bytes
+		detect_image_type(&profile_picture_bytes).map_err(|_| {
+			ErrorResponse::validation_error(
+				"Unsupported image format. Only JPEG, PNG, WebP, and HEIC are supported.".to_string()
+			)
+		})?;
+
 		Ok(Self {
 			metadata,
-			profile_picture_bytes,
+			profile_picture_bytes: profile_picture_bytes.to_vec(),
 		})
 	}
 
