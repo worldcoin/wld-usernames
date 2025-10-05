@@ -37,7 +37,7 @@ impl Blocklist {
 
 	/// Check if a username is blocked.
 	pub fn ensure_valid(&self, username: &str) -> Result<(), Error> {
-		if self.names.contains(username) {
+		if self.names.contains(username.to_lowercase().as_str()) {
 			return Err(Error::Reserved);
 		};
 
