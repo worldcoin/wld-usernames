@@ -266,7 +266,6 @@ impl ProfilePictureUploadHandler {
 
 		let signature =
 			PrimitiveSignature::try_from(signature_bytes.as_slice()).map_err(|err| {
-				warn!(error = %err, "invalid signature payload");
 				ErrorResponse::validation_error("Invalid signature bytes provided".to_string())
 			})?;
 
@@ -412,7 +411,6 @@ impl ProfilePicturePayload {
 		})?;
 		let metadata: ProfilePictureMetadata = serde_json::from_slice(metadata_bytes.as_ref())
 			.map_err(|err| {
-				warn!(error = %err, "failed to deserialize profile picture metadata");
 				ErrorResponse::validation_error("Invalid metadata payload provided".to_string())
 			})?;
 
