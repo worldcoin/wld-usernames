@@ -84,6 +84,7 @@ async fn verify_key_against_db(
 	db: &Db,
 	recovered_verifying_key_bytes: &[u8],
 ) -> Result<bool, ErrorResponse> {
+	// TODO: Change to one per row if we decide to have multiple enclaves.
 	let keys_str = sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
 		.fetch_optional(&db.read_only)
 		.await?;
