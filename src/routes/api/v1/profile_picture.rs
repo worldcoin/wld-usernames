@@ -83,7 +83,7 @@ async fn verify_key_against_db(
 		return Ok(false);
 	}
 
-	// All keys are stored in uncompressed format (65 bytes), so we can do direct comparison
+	// All keys are stored in compressed format (33 bytes), so we can do direct comparison
 	let recovered_key_hex = hex::encode(recovered_verifying_key_bytes);
 	let key_exists = keys_str
 		.split(',')
@@ -241,12 +241,10 @@ impl ProfilePictureUploadHandler {
 
 		// Decode the hex signature (should be 65 bytes: 64-byte signature + 1-byte recovery ID)
 		let signature_bytes = hex::decode(signature_str).map_err(|err| {
-			warn!(error = %err, "invalid signature hex encoding");
 			ErrorResponse::validation_error("Invalid signature provided".to_string())
 		})?;
 
 		if signature_bytes.len() != 65 {
-			warn!(len = signature_bytes.len(), "signature must be 65 bytes");
 			return Err(ErrorResponse::validation_error(
 				"Invalid signature length".to_string(),
 			));
@@ -265,7 +263,7 @@ impl ProfilePictureUploadHandler {
 		})?;
 
 		let recovered_verifying_key_bytes =
-			recovered_verifying_key.to_encoded_point(false).to_bytes();
+			recovered_verifying_key.to_encoded_point(true).to_bytes();
 
 		Ok(recovered_verifying_key_bytes.to_vec())
 	}
@@ -296,7 +294,7 @@ impl ProfilePictureUploadHandler {
 			})?;
 			// TODO: Verify the attestation before trusting the public key
 
-			// Decode the base64 public key from DF service
+			// Decode the base64 compressed public key (33 bytes) from DF service
 			let df_public_key_bytes =
 				STANDARD
 					.decode(&signing_key_data.public_key)
@@ -305,31 +303,20 @@ impl ProfilePictureUploadHandler {
 						ErrorResponse::server_error("Failed to verify signature".to_string())
 					})?;
 
-			// Parse and normalize to uncompressed format (65 bytes)
+			// Parse as compressed SEC1 format (33 bytes)
 			let df_verifying_key = VerifyingKey::from_sec1_bytes(&df_public_key_bytes)
-				.or_else(|_| {
-					// Handle 64-byte format (add 0x04 prefix)
-					if df_public_key_bytes.len() == 64 {
-						let mut uncompressed = Vec::with_capacity(65);
-						uncompressed.push(0x04);
-						uncompressed.extend_from_slice(&df_public_key_bytes);
-						VerifyingKey::from_sec1_bytes(&uncompressed)
-					} else {
-						Err(k256::elliptic_curve::Error::new())
-					}
-				})
 				.map_err(|err| {
 					warn!(error = ?err, "failed to parse DF public key");
 					ErrorResponse::server_error("Failed to verify signature".to_string())
 				})?;
 
-			// Always store in uncompressed format for consistent comparison
-			let df_uncompressed_bytes = df_verifying_key.to_encoded_point(false).to_bytes();
-			let df_uncompressed_hex = hex::encode(&*df_uncompressed_bytes);
-			add_signing_key_to_db(&self.db, &df_uncompressed_hex).await?;
+			// Store in compressed format for consistent comparison
+			let df_compressed_bytes = df_verifying_key.to_encoded_point(true).to_bytes();
+			let df_compressed_hex = hex::encode(&*df_compressed_bytes);
+			add_signing_key_to_db(&self.db, &df_compressed_hex).await?;
 
-			// Direct byte comparison (both are uncompressed)
-			if &*df_uncompressed_bytes == recovered_key_bytes {
+			// Direct byte comparison (both are compressed)
+			if &*df_compressed_bytes == recovered_key_bytes {
 				key_valid = true;
 				info!(
 					public_key = %signing_key_data.public_key,
