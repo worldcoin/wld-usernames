@@ -364,7 +364,10 @@ impl ProfilePictureUploadHandler {
 		let aws_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
 		let s3_client = S3Client::new(&aws_config);
 
-		let bucket_name = "wld-usernames-profile-pictures";
+		let bucket_name = std::env::var("UPLOADS_BUCKET_NAME").map_err(|_| {
+			warn!("UPLOADS_BUCKET_NAME environment variable not set");
+			ErrorResponse::server_error("Configuration error".to_string())
+		})?;
 		let object_key = format!("{}/profile", self.payload.address());
 
 		// Detect content type from magic bytes
@@ -383,14 +386,6 @@ impl ProfilePictureUploadHandler {
 				warn!(error = %err, address = %self.payload.address(), "failed to upload profile picture to S3");
 				ErrorResponse::server_error("Failed to upload profile picture".to_string())
 			})?;
-
-		info!(
-			address = %self.payload.address(),
-			bucket = bucket_name,
-			key = %object_key,
-			content_type = content_type,
-			"profile picture uploaded to S3"
-		);
 
 		Ok(())
 	}
