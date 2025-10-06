@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO verifying_keys (id, keys) VALUES (1, $1)\n\t\t\t\tON CONFLICT (id) DO UPDATE SET keys = $1, updated_at = CURRENT_TIMESTAMP",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e9cbddd38752a4eac1bccac7effc7c048802be516d8914d26a87e43451ed0714"
+}

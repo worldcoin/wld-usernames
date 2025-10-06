@@ -109,7 +109,7 @@ async fn verify_key_against_db(
 
 async fn add_signing_key_to_db(db: &Db, public_key_hex: &str) -> Result<(), ErrorResponse> {
 	// Fetch current keys (or None if row doesn't exist)
-	let keys_str = sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
+	let keys_str: Option<String> = sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
 		.fetch_optional(&db.read_write)
 		.await?;
 
@@ -267,7 +267,7 @@ impl ProfilePictureUploadHandler {
 			.unwrap_or(signature_input);
 
 		// Decode the hex signature (should be 65 bytes: 64-byte signature + 1-byte recovery ID)
-		let signature_bytes = hex::decode(signature_str).map_err(|err| {
+		let signature_bytes = hex::decode(signature_str).map_err(|_err| {
 			ErrorResponse::validation_error("Invalid signature provided".to_string())
 		})?;
 
@@ -278,7 +278,7 @@ impl ProfilePictureUploadHandler {
 		}
 
 		let signature =
-			PrimitiveSignature::try_from(signature_bytes.as_slice()).map_err(|err| {
+			PrimitiveSignature::try_from(signature_bytes.as_slice()).map_err(|_err| {
 				ErrorResponse::validation_error("Invalid signature bytes provided".to_string())
 			})?;
 
@@ -418,7 +418,7 @@ impl ProfilePicturePayload {
 			ErrorResponse::validation_error(format!("Missing multipart field: {FIELD_METADATA}"))
 		})?;
 		let metadata: ProfilePictureMetadata = serde_json::from_slice(metadata_bytes.as_ref())
-			.map_err(|err| {
+			.map_err(|_err| {
 				ErrorResponse::validation_error("Invalid metadata payload provided".to_string())
 			})?;
 
@@ -461,11 +461,11 @@ impl ProfilePicturePayload {
 		&self.metadata.address
 	}
 
-	const fn signature(&self) -> &str {
+	fn signature(&self) -> &str {
 		self.metadata.signature.as_str()
 	}
 
-	const fn nullifier_hash(&self) -> &str {
+	fn nullifier_hash(&self) -> &str {
 		self.metadata.nullifier_hash.as_str()
 	}
 

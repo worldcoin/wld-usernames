@@ -7,6 +7,7 @@ name = "wld-usernames"
 authors = ["Miguel Piedrafita <rust@miguel.build>"]
 repository = "https://github.com/worldcoin/wld-usernames"
 description = "Backend powering World App username registration and querying."
+rust-version = "1.86"
 
 [dependencies]
 axum = { version = "0.7.9", features = ["multipart"] }
