@@ -1,5 +1,5 @@
 # ---- Builder Stage ----
-FROM --platform=linux/amd64 public.ecr.aws/docker/library/rust:1.81 AS builder
+FROM --platform=linux/amd64 public.ecr.aws/docker/library/rust:1.86 AS builder
 
 # Install additional build dependencies required by aws-lc-sys
 RUN apt-get update && \

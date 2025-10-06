@@ -1,2 +1,3 @@
 [toolchain]
 components = ["rustfmt", "clippy"]   # Additional tools to install
+channel = "1.86"
