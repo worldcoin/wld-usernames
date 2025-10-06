@@ -3,6 +3,7 @@ use idkit::{hashing::hash_to_field, session::VerificationLevel, Proof};
 use reqwest::{header, StatusCode};
 use serde::Serialize;
 use std::time::Duration;
+use alloy::hex;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -34,6 +35,39 @@ struct VerificationRequest {
 	signal_hash: Option<String>,
 }
 
+/// Verify a World ID proof with a hex-encoded signal (like a signature).
+/// The hex string is decoded to bytes and hashed directly without ABI encoding.
+///
+/// # Errors
+///
+/// Errors if the proof is invalid (`Error::Verification`), or if there's an error validating the proof.
+pub async fn dev_portal_verify_proof_hex(
+	proof: Proof,
+	app_id: String,
+	action: &str,
+	hex_signal: &str,
+	developer_portal_url: String,
+) -> Result<(), Error> {
+	// Strip 0x prefix if present
+	let hex_str = hex_signal.strip_prefix("0x").unwrap_or(hex_signal);
+
+	// Decode hex to bytes
+	let signal_bytes = hex::decode(hex_str).map_err(|_| {
+		Error::InvalidResponse {
+			status: StatusCode::BAD_REQUEST,
+			body: "Invalid hex signal".to_string(),
+		}
+	})?;
+
+	let signal_hash = if signal_bytes.is_empty() {
+		None
+	} else {
+		Some(format!("0x{:x}", hash_to_field(&signal_bytes)))
+	};
+
+	verify_proof_internal(proof, app_id, action, signal_hash, developer_portal_url).await
+}
+
 /// Verify a World ID proof using the Developer Portal API.
 ///
 /// # Errors
@@ -53,11 +87,22 @@ pub async fn dev_portal_verify_proof<V: alloy::sol_types::SolValue + Send>(
 		Some(format!("0x{:x}", hash_to_field(&packed)))
 	};
 
+	verify_proof_internal(proof, app_id, action, signal_hash, developer_portal_url).await
+}
+
+async fn verify_proof_internal(
+	proof: Proof,
+	app_id: String,
+	action: &str,
+	signal_hash: Option<String>,
+	developer_portal_url: String,
+) -> Result<(), Error> {
+
 	let body = VerificationRequest {
 		action: action.to_owned(),
-		proof: proof.proof.clone(),
-		merkle_root: proof.merkle_root.clone(),
-		nullifier_hash: proof.nullifier_hash.clone(),
+		proof: proof.proof,
+		merkle_root: proof.merkle_root,
+		nullifier_hash: proof.nullifier_hash,
 		verification_level: proof.verification_level,
 		signal_hash,
 	};
