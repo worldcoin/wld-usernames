@@ -25,6 +25,12 @@ pub struct UsernameRecord {
 	pub minimized_profile_picture_url: Option<Url>,
 }
 
+#[derive(Debug, Serialize, Deserialize, JsonSchema, OperationIo)]
+pub struct ProfilePictureUploadResponse {
+	/// URL to the uploaded profile picture.
+	pub profile_picture_url: String,
+}
+
 #[allow(clippy::fallible_impl_from)]
 impl From<Name> for UsernameRecord {
 	fn from(value: Name) -> Self {

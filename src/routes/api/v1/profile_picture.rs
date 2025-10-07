@@ -1,21 +1,24 @@
-use aide::transform::TransformOperation;
 use alloy::primitives::{Keccak256, PrimitiveSignature};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{primitives::ByteStream, Client as S3Client};
-use axum::{body::Bytes, extract::Multipart, http::StatusCode, Extension};
+use axum::{body::Bytes, extract::Multipart, Extension};
+use axum_jsonschema::Json;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use idkit::Proof;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::PublicKey as VerifyingKey;
+use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::Deserialize;
-use std::{collections::HashMap, str::FromStr};
+use std::collections::HashMap;
 use tracing::{info, warn, Instrument};
 
 use std::sync::Arc;
 
 use crate::{
 	config::{Config, ConfigExt, Db},
-	types::{ErrorResponse, VerificationLevel as WrappedVerificationLevel},
+	types::{
+		ErrorResponse, ProfilePictureUploadResponse, VerificationLevel as WrappedVerificationLevel,
+	},
 	verify,
 };
 
@@ -109,9 +112,10 @@ async fn verify_key_against_db(
 
 async fn add_signing_key_to_db(db: &Db, public_key_hex: &str) -> Result<(), ErrorResponse> {
 	// Fetch current keys (or None if row doesn't exist)
-	let keys_str: Option<String> = sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
-		.fetch_optional(&db.read_write)
-		.await?;
+	let keys_str: Option<String> =
+		sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
+			.fetch_optional(&db.read_write)
+			.await?;
 
 	let mut keys: Vec<&str> = if let Some(ref keys_str) = keys_str {
 		if keys_str.is_empty() {
@@ -160,14 +164,21 @@ async fn add_signing_key_to_db(db: &Db, public_key_hex: &str) -> Result<(), Erro
 struct ProfilePictureUploadHandler {
 	config: Arc<Config>,
 	db: Db,
+	redis: ConnectionManager,
 	payload: ProfilePicturePayload,
 }
 
 impl ProfilePictureUploadHandler {
-	fn new(config: Arc<Config>, db: Db, payload: ProfilePicturePayload) -> Self {
+	fn new(
+		config: Arc<Config>,
+		db: Db,
+		redis: ConnectionManager,
+		payload: ProfilePicturePayload,
+	) -> Self {
 		Self {
 			config,
 			db,
+			redis,
 			payload,
 		}
 	}
@@ -248,7 +259,10 @@ impl ProfilePictureUploadHandler {
 		};
 
 		if wallet_address_bytes.len() != 20 {
-			warn!(len = wallet_address_bytes.len(), "wallet address must be 20 bytes");
+			warn!(
+				len = wallet_address_bytes.len(),
+				"wallet address must be 20 bytes"
+			);
 			return Err(ErrorResponse::validation_error(
 				"Invalid wallet address length".to_string(),
 			));
@@ -330,8 +344,8 @@ impl ProfilePictureUploadHandler {
 					})?;
 
 			// Parse as compressed SEC1 format (33 bytes)
-			let df_verifying_key = VerifyingKey::from_sec1_bytes(&df_public_key_bytes)
-				.map_err(|err| {
+			let df_verifying_key =
+				VerifyingKey::from_sec1_bytes(&df_public_key_bytes).map_err(|err| {
 					warn!(error = ?err, "failed to parse DF public key");
 					ErrorResponse::server_error("Failed to verify signature".to_string())
 				})?;
@@ -360,7 +374,7 @@ impl ProfilePictureUploadHandler {
 		Ok(())
 	}
 
-	async fn upload_to_s3(&self) -> Result<(), ErrorResponse> {
+	async fn upload_to_s3(&self) -> Result<String, ErrorResponse> {
 		let aws_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
 		let s3_client = S3Client::new(&aws_config);
 
@@ -387,10 +401,42 @@ impl ProfilePictureUploadHandler {
 				ErrorResponse::server_error("Failed to upload profile picture".to_string())
 			})?;
 
+		Ok(object_key)
+	}
+
+	async fn update_profile_picture_url(&self, object_key: &str) -> Result<String, ErrorResponse> {
+		// Construct the CDN URL
+		let cdn_base_url = std::env::var("PROFILE_PICTURE_CDN_URL").map_err(|_| {
+			warn!("PROFILE_PICTURE_CDN_URL environment variable not set");
+			ErrorResponse::server_error("Configuration error".to_string())
+		})?;
+		let profile_picture_url = format!("{}/{}", cdn_base_url.trim_end_matches('/'), object_key);
+
+		// Update database with the profile picture URL
+		sqlx::query!(
+			"UPDATE names
+			 SET profile_picture_url = $1, updated_at = CURRENT_TIMESTAMP
+			 WHERE address = $2",
+			profile_picture_url,
+			self.payload.address()
+		)
+		.execute(&self.db.read_write)
+		.await?;
+
+		Ok(profile_picture_url)
+	}
+
+	async fn invalidate_cache(&mut self, username: &str) -> Result<(), ErrorResponse> {
+		let address_cache_key = format!("query_single:{}", self.payload.address());
+		let username_cache_key = format!("query_single:{}", username);
+
+		let _: Result<(), redis::RedisError> = self.redis.del(&address_cache_key).await;
+		let _: Result<(), redis::RedisError> = self.redis.del(&username_cache_key).await;
+
 		Ok(())
 	}
 
-	async fn execute(self) -> Result<StatusCode, ErrorResponse> {
+	async fn execute(mut self) -> Result<ProfilePictureUploadResponse, ErrorResponse> {
 		info!(
 			nullifier_hash = %self.payload.nullifier_hash(),
 			address = %self.payload.address_checksum(),
@@ -399,14 +445,21 @@ impl ProfilePictureUploadHandler {
 		);
 
 		self.verify_world_id().await?;
-		self.verify_username_exists().await?;
+		let username = self.verify_username_exists().await?;
 		let recovered_key = self.recover_signature()?;
 		self.verify_signature(&recovered_key).await?;
-		self.upload_to_s3().await?;
 
-		// TODO: Update username record with the profile picture url
+		let object_key = self.upload_to_s3().await?;
+		let profile_picture_url = self.update_profile_picture_url(&object_key).await?;
 
-		Ok(StatusCode::ACCEPTED)
+		// Invalidate cache for both address and username lookups
+		self.invalidate_cache(&username).await?;
+
+		info!(url = %profile_picture_url, "Profile picture uploaded and database updated successfully");
+
+		Ok(ProfilePictureUploadResponse {
+			profile_picture_url,
+		})
 	}
 }
 
@@ -434,7 +487,7 @@ impl ProfilePicturePayload {
 		// Validate the image type by checking magic bytes
 		detect_image_type(&profile_picture_bytes).map_err(|_| {
 			ErrorResponse::validation_error(
-				"Unsupported image format. Only JPEG, PNG, and WebP are supported.".to_string()
+				"Unsupported image format. Only JPEG, PNG, and WebP are supported.".to_string(),
 			)
 		})?;
 
@@ -478,10 +531,12 @@ impl ProfilePicturePayload {
 pub async fn upload_profile_picture(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<Db>,
+	Extension(redis): Extension<ConnectionManager>,
 	multipart: Multipart,
-) -> Result<StatusCode, ErrorResponse> {
+) -> Result<Json<ProfilePictureUploadResponse>, ErrorResponse> {
 	let payload = ProfilePicturePayload::from_multipart(multipart).await?;
-	ProfilePictureUploadHandler::new(config, db, payload)
+	let response = ProfilePictureUploadHandler::new(config, db, redis, payload)
 		.execute()
-		.await
+		.await?;
+	Ok(Json(response))
 }
