@@ -1,4 +1,3 @@
-use aide::transform::TransformOperation;
 use alloy::primitives::{Keccak256, PrimitiveSignature};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{primitives::ByteStream, Client as S3Client};
@@ -8,7 +7,7 @@ use idkit::Proof;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::PublicKey as VerifyingKey;
 use serde::Deserialize;
-use std::{collections::HashMap, str::FromStr};
+use std::collections::HashMap;
 use tracing::{info, warn, Instrument};
 
 use std::sync::Arc;
@@ -360,7 +359,7 @@ impl ProfilePictureUploadHandler {
 		Ok(())
 	}
 
-	async fn upload_to_s3(&self) -> Result<(), ErrorResponse> {
+	async fn upload_to_s3(&self) -> Result<String, ErrorResponse> {
 		let aws_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
 		let s3_client = S3Client::new(&aws_config);
 
@@ -387,7 +386,29 @@ impl ProfilePictureUploadHandler {
 				ErrorResponse::server_error("Failed to upload profile picture".to_string())
 			})?;
 
-		Ok(())
+		Ok(object_key)
+	}
+
+	async fn update_profile_picture_url(&self, object_key: &str) -> Result<String, ErrorResponse> {
+		// Construct the CDN URL
+		let cdn_base_url = std::env::var("PROFILE_PICTURE_CDN_URL").map_err(|_| {
+			warn!("PROFILE_PICTURE_CDN_URL environment variable not set");
+			ErrorResponse::server_error("Configuration error".to_string())
+		})?;
+		let profile_picture_url = format!("{}/{}", cdn_base_url.trim_end_matches('/'), object_key);
+
+		// Update database with the profile picture URL
+		sqlx::query!(
+			"UPDATE names
+			 SET profile_picture_url = $1, updated_at = CURRENT_TIMESTAMP
+			 WHERE address = $2",
+			profile_picture_url,
+			self.payload.address()
+		)
+		.execute(&self.db.read_write)
+		.await?;
+
+		Ok(profile_picture_url)
 	}
 
 	async fn execute(self) -> Result<StatusCode, ErrorResponse> {
@@ -402,9 +423,11 @@ impl ProfilePictureUploadHandler {
 		self.verify_username_exists().await?;
 		let recovered_key = self.recover_signature()?;
 		self.verify_signature(&recovered_key).await?;
-		self.upload_to_s3().await?;
 
-		// TODO: Update username record with the profile picture url
+		let object_key = self.upload_to_s3().await?;
+		let profile_picture_url = self.update_profile_picture_url(&object_key).await?;
+
+		info!(url = %profile_picture_url, "Profile picture uploaded and database updated successfully");
 
 		Ok(StatusCode::ACCEPTED)
 	}
