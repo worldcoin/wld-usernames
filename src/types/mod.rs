@@ -12,5 +12,5 @@ pub use request::{
 	AvatarQueryParams, ENSQueryPayload, QueryAddressesPayload, RegisterUsernamePayload,
 	RenamePayload, UpdateUsernamePayload,
 };
-pub use response::{ENSResponse, UsernameRecord};
+pub use response::{ENSResponse, ProfilePictureUploadResponse, UsernameRecord};
 pub use wrappers::{Address, VerificationLevel};

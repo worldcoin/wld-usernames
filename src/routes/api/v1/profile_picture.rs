@@ -1,7 +1,8 @@
 use alloy::primitives::{Keccak256, PrimitiveSignature};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{primitives::ByteStream, Client as S3Client};
-use axum::{body::Bytes, extract::Multipart, http::StatusCode, Extension};
+use axum::{body::Bytes, extract::Multipart, Extension};
+use axum_jsonschema::Json;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use idkit::Proof;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
@@ -14,7 +15,9 @@ use std::sync::Arc;
 
 use crate::{
 	config::{Config, ConfigExt, Db},
-	types::{ErrorResponse, VerificationLevel as WrappedVerificationLevel},
+	types::{
+		ErrorResponse, ProfilePictureUploadResponse, VerificationLevel as WrappedVerificationLevel,
+	},
 	verify,
 };
 
@@ -108,9 +111,10 @@ async fn verify_key_against_db(
 
 async fn add_signing_key_to_db(db: &Db, public_key_hex: &str) -> Result<(), ErrorResponse> {
 	// Fetch current keys (or None if row doesn't exist)
-	let keys_str: Option<String> = sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
-		.fetch_optional(&db.read_write)
-		.await?;
+	let keys_str: Option<String> =
+		sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
+			.fetch_optional(&db.read_write)
+			.await?;
 
 	let mut keys: Vec<&str> = if let Some(ref keys_str) = keys_str {
 		if keys_str.is_empty() {
@@ -247,7 +251,10 @@ impl ProfilePictureUploadHandler {
 		};
 
 		if wallet_address_bytes.len() != 20 {
-			warn!(len = wallet_address_bytes.len(), "wallet address must be 20 bytes");
+			warn!(
+				len = wallet_address_bytes.len(),
+				"wallet address must be 20 bytes"
+			);
 			return Err(ErrorResponse::validation_error(
 				"Invalid wallet address length".to_string(),
 			));
@@ -329,8 +336,8 @@ impl ProfilePictureUploadHandler {
 					})?;
 
 			// Parse as compressed SEC1 format (33 bytes)
-			let df_verifying_key = VerifyingKey::from_sec1_bytes(&df_public_key_bytes)
-				.map_err(|err| {
+			let df_verifying_key =
+				VerifyingKey::from_sec1_bytes(&df_public_key_bytes).map_err(|err| {
 					warn!(error = ?err, "failed to parse DF public key");
 					ErrorResponse::server_error("Failed to verify signature".to_string())
 				})?;
@@ -411,7 +418,7 @@ impl ProfilePictureUploadHandler {
 		Ok(profile_picture_url)
 	}
 
-	async fn execute(self) -> Result<StatusCode, ErrorResponse> {
+	async fn execute(self) -> Result<ProfilePictureUploadResponse, ErrorResponse> {
 		info!(
 			nullifier_hash = %self.payload.nullifier_hash(),
 			address = %self.payload.address_checksum(),
@@ -429,7 +436,9 @@ impl ProfilePictureUploadHandler {
 
 		info!(url = %profile_picture_url, "Profile picture uploaded and database updated successfully");
 
-		Ok(StatusCode::ACCEPTED)
+		Ok(ProfilePictureUploadResponse {
+			profile_picture_url,
+		})
 	}
 }
 
@@ -457,7 +466,7 @@ impl ProfilePicturePayload {
 		// Validate the image type by checking magic bytes
 		detect_image_type(&profile_picture_bytes).map_err(|_| {
 			ErrorResponse::validation_error(
-				"Unsupported image format. Only JPEG, PNG, and WebP are supported.".to_string()
+				"Unsupported image format. Only JPEG, PNG, and WebP are supported.".to_string(),
 			)
 		})?;
 
@@ -502,9 +511,10 @@ pub async fn upload_profile_picture(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<Db>,
 	multipart: Multipart,
-) -> Result<StatusCode, ErrorResponse> {
+) -> Result<Json<ProfilePictureUploadResponse>, ErrorResponse> {
 	let payload = ProfilePicturePayload::from_multipart(multipart).await?;
-	ProfilePictureUploadHandler::new(config, db, payload)
+	let response = ProfilePictureUploadHandler::new(config, db, payload)
 		.execute()
-		.await
+		.await?;
+	Ok(Json(response))
 }
