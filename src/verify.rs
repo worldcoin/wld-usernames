@@ -1,9 +1,9 @@
+use alloy::hex;
 use backon::{ExponentialBuilder, Retryable};
 use idkit::{hashing::hash_to_field, session::VerificationLevel, Proof};
 use reqwest::{header, StatusCode};
 use serde::Serialize;
 use std::time::Duration;
-use alloy::hex;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -52,11 +52,9 @@ pub async fn dev_portal_verify_proof_hex(
 	let hex_str = hex_signal.strip_prefix("0x").unwrap_or(hex_signal);
 
 	// Decode hex to bytes
-	let signal_bytes = hex::decode(hex_str).map_err(|_| {
-		Error::InvalidResponse {
-			status: StatusCode::BAD_REQUEST,
-			body: "Invalid hex signal".to_string(),
-		}
+	let signal_bytes = hex::decode(hex_str).map_err(|_| Error::InvalidResponse {
+		status: StatusCode::BAD_REQUEST,
+		body: "Invalid hex signal".to_string(),
 	})?;
 
 	let signal_hash = if signal_bytes.is_empty() {
@@ -97,7 +95,6 @@ async fn verify_proof_internal(
 	signal_hash: Option<String>,
 	developer_portal_url: String,
 ) -> Result<(), Error> {
-
 	let body = VerificationRequest {
 		action: action.to_owned(),
 		proof: proof.proof,

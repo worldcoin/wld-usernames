@@ -169,7 +169,12 @@ struct ProfilePictureUploadHandler {
 }
 
 impl ProfilePictureUploadHandler {
-	fn new(config: Arc<Config>, db: Db, redis: ConnectionManager, payload: ProfilePicturePayload) -> Self {
+	fn new(
+		config: Arc<Config>,
+		db: Db,
+		redis: ConnectionManager,
+		payload: ProfilePicturePayload,
+	) -> Self {
 		Self {
 			config,
 			db,
