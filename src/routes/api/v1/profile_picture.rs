@@ -7,6 +7,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use idkit::Proof;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::PublicKey as VerifyingKey;
+use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::Deserialize;
 use std::collections::HashMap;
 use tracing::{info, warn, Instrument};
@@ -163,14 +164,16 @@ async fn add_signing_key_to_db(db: &Db, public_key_hex: &str) -> Result<(), Erro
 struct ProfilePictureUploadHandler {
 	config: Arc<Config>,
 	db: Db,
+	redis: ConnectionManager,
 	payload: ProfilePicturePayload,
 }
 
 impl ProfilePictureUploadHandler {
-	fn new(config: Arc<Config>, db: Db, payload: ProfilePicturePayload) -> Self {
+	fn new(config: Arc<Config>, db: Db, redis: ConnectionManager, payload: ProfilePicturePayload) -> Self {
 		Self {
 			config,
 			db,
+			redis,
 			payload,
 		}
 	}
@@ -418,7 +421,17 @@ impl ProfilePictureUploadHandler {
 		Ok(profile_picture_url)
 	}
 
-	async fn execute(self) -> Result<ProfilePictureUploadResponse, ErrorResponse> {
+	async fn invalidate_cache(&mut self, username: &str) -> Result<(), ErrorResponse> {
+		let address_cache_key = format!("query_single:{}", self.payload.address());
+		let username_cache_key = format!("query_single:{}", username);
+
+		let _: Result<(), redis::RedisError> = self.redis.del(&address_cache_key).await;
+		let _: Result<(), redis::RedisError> = self.redis.del(&username_cache_key).await;
+
+		Ok(())
+	}
+
+	async fn execute(mut self) -> Result<ProfilePictureUploadResponse, ErrorResponse> {
 		info!(
 			nullifier_hash = %self.payload.nullifier_hash(),
 			address = %self.payload.address_checksum(),
@@ -427,12 +440,15 @@ impl ProfilePictureUploadHandler {
 		);
 
 		self.verify_world_id().await?;
-		self.verify_username_exists().await?;
+		let username = self.verify_username_exists().await?;
 		let recovered_key = self.recover_signature()?;
 		self.verify_signature(&recovered_key).await?;
 
 		let object_key = self.upload_to_s3().await?;
 		let profile_picture_url = self.update_profile_picture_url(&object_key).await?;
+
+		// Invalidate cache for both address and username lookups
+		self.invalidate_cache(&username).await?;
 
 		info!(url = %profile_picture_url, "Profile picture uploaded and database updated successfully");
 
@@ -510,10 +526,11 @@ impl ProfilePicturePayload {
 pub async fn upload_profile_picture(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<Db>,
+	Extension(redis): Extension<ConnectionManager>,
 	multipart: Multipart,
 ) -> Result<Json<ProfilePictureUploadResponse>, ErrorResponse> {
 	let payload = ProfilePicturePayload::from_multipart(multipart).await?;
-	let response = ProfilePictureUploadHandler::new(config, db, payload)
+	let response = ProfilePictureUploadHandler::new(config, db, redis, payload)
 		.execute()
 		.await?;
 	Ok(Json(response))
