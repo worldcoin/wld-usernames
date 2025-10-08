@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT username FROM names WHERE nullifier_hash = $1 AND address = $2",
+  "query": "SELECT username FROM names WHERE nullifier_hash = $1 AND LOWER(address) = LOWER($2)",
   "describe": {
     "columns": [
       {
@@ -19,5 +19,5 @@
       false
     ]
   },
-  "hash": "f2fed33bd393a7e8cb9ffad20b168c42b37355ef2ea18770619746a5d392289e"
+  "hash": "16d6d3afb098aff889823b2bc2faa114d1b4f064109764ae40bff6f311a3c7b7"
 }
