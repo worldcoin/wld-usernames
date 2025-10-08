@@ -225,7 +225,7 @@ impl ProfilePictureUploadHandler {
 
 	async fn verify_username_exists(&self) -> Result<String, ErrorResponse> {
 		let username_row = sqlx::query!(
-			"SELECT username FROM names WHERE nullifier_hash = $1 AND address = $2",
+			"SELECT username FROM names WHERE nullifier_hash = $1 AND LOWER(address) = LOWER($2)",
 			self.payload.nullifier_hash(),
 			self.payload.address_checksum()
 		)
