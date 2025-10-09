@@ -416,7 +416,7 @@ impl ProfilePictureUploadHandler {
 		sqlx::query!(
 			"UPDATE names
 			 SET profile_picture_url = $1, updated_at = CURRENT_TIMESTAMP
-			 WHERE address = $2",
+			 WHERE LOWER(address) = LOWER($2)",
 			profile_picture_url,
 			self.payload.address()
 		)
@@ -427,7 +427,10 @@ impl ProfilePictureUploadHandler {
 	}
 
 	async fn invalidate_cache(&mut self, username: &str) -> Result<(), ErrorResponse> {
-		let address_cache_key = format!("query_single:{}", self.payload.address());
+		use super::validate_address;
+
+		let address_cache_key =
+			format!("query_single:{}", validate_address(self.payload.address()));
 		let username_cache_key = format!("query_single:{}", username);
 
 		let _: Result<(), redis::RedisError> = self.redis.del(&address_cache_key).await;

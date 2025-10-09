@@ -19,7 +19,7 @@ use ens_gateway::{docs as ens_gateway_docs, ens_gateway_get, ens_gateway_post};
 use http::Method;
 use profile_picture::upload_profile_picture;
 use query_multiple::{docs as query_multiple_docs, query_multiple};
-use query_single::{docs as query_single_docs, query_single};
+use query_single::{docs as query_single_docs, query_single, validate_address};
 use register_username::{docs as register_username_docs, register_username};
 use rename::{docs as rename_docs, rename};
 use search::{docs as search_docs, search};
