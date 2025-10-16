@@ -18,6 +18,9 @@ pub async fn start(mut config: Config, mut shutdown: broadcast::Receiver<()>) ->
 		..OpenApi::default()
 	};
 
+	// Create JWKS cache extension before config is consumed
+	let jwks_cache_ext = config.jwks_cache_extension();
+
 	let router = routes::handler()
 		.finish_api(&mut openapi)
 		.layer(Extension(openapi))
@@ -29,6 +32,7 @@ pub async fn start(mut config: Config, mut shutdown: broadcast::Receiver<()>) ->
 		.layer(config.db_extension())
 		.layer(config.redis_extension())
 		.layer(config.blocklist_extension())
+		.layer(jwks_cache_ext)
 		.layer(config.extension());
 
 	let addr = SocketAddr::from((
