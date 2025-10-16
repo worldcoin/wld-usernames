@@ -2,7 +2,8 @@ use aide::axum::{
 	routing::{get_with, post_with},
 	ApiRouter,
 };
-use axum::routing::post as axum_post;
+use axum::{middleware, routing::post as axum_post, Extension};
+use std::sync::Arc;
 
 mod avatar;
 mod ens_gateway;
@@ -25,6 +26,8 @@ use rename::{docs as rename_docs, rename};
 use search::{docs as search_docs, search};
 use tower_http::cors::{Any, CorsLayer};
 use update_record::{docs as update_record_docs, update_record};
+
+use crate::attestation::{attestation_middleware, JwksCache};
 
 pub fn handler() -> ApiRouter {
 	let cors = CorsLayer::new()
@@ -61,5 +64,12 @@ pub fn handler() -> ApiRouter {
 			"/search/:username",
 			get_with(search, search_docs).layer(cors),
 		)
-		.route("/profile-picture", axum_post(upload_profile_picture))
+		.route(
+			"/profile-picture",
+			axum_post(upload_profile_picture).route_layer(middleware::from_fn(
+				|Extension(jwks_cache): Extension<Arc<JwksCache>>, headers, request, next| async move {
+					attestation_middleware(jwks_cache, headers, request, next).await
+				},
+			)),
+		)
 }
