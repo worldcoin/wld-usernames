@@ -47,6 +47,12 @@ async fn extract_fields_from_multipart(
 		ErrorResponse::bad_request("invalid_request_body")
 	})? {
 		let name = field.name().unwrap_or_default().to_string();
+
+		if name == FIELD_METADATA && fields.contains_key(FIELD_METADATA) {
+			warn!("duplicate metadata field in multipart body");
+			return Err(ErrorResponse::bad_request("duplicate_metadata_field"));
+		}
+
 		let bytes = field.bytes().await.map_err(|err| {
 			warn!("failed to read multipart field bytes: {err:#}");
 			ErrorResponse::bad_request("invalid_request_body")
