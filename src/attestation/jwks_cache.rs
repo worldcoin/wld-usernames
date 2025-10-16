@@ -1,22 +1,7 @@
 use redis::{aio::ConnectionManager, AsyncCommands};
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-use super::types::AttestationError;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JwksKey {
-	pub kty: String,
-	pub kid: String,
-	pub alg: String,
-	pub n: String,
-	pub e: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct JwksResponse {
-	keys: Vec<JwksKey>,
-}
+use super::types::{AttestationError, Jwks, JwksKey};
 
 pub struct JwksCache {
 	jwks_url: String,
@@ -53,7 +38,7 @@ impl JwksCache {
 			.send()
 			.await
 			.map_err(|e| AttestationError::JwksFetchError(e.to_string()))?
-			.json::<JwksResponse>()
+			.json::<Jwks>()
 			.await
 			.map_err(|e| AttestationError::JwksFetchError(e.to_string()))?;
 
