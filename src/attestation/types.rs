@@ -17,7 +17,7 @@ pub struct Jwks {
 	pub keys: Vec<JwksKey>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttestationClaims {
 	pub jti: String,
 	pub exp: i64,

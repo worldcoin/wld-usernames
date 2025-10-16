@@ -5,3 +5,6 @@ pub mod types;
 
 pub use jwks_cache::JwksCache;
 pub use middleware::attestation_middleware;
+
+#[cfg(test)]
+pub mod tests;

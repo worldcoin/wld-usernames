@@ -99,7 +99,7 @@ pub async fn attestation_middleware(
 }
 
 /// Convert JWK to DecodingKey
-fn jwk_to_decoding_key(jwk: &super::jwks_cache::JwksKey) -> Result<DecodingKey, AttestationError> {
+fn jwk_to_decoding_key(jwk: &super::types::JwksKey) -> Result<DecodingKey, AttestationError> {
 	// Serialize the JWK back to JSON for the jsonwebtoken library
 	let jwk_json = serde_json::to_string(jwk)
 		.map_err(|e| AttestationError::InvalidToken(format!("JWK serialization error: {e}")))?;

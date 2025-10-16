@@ -1,5 +1,5 @@
 use axum::body::Bytes;
-use axum::http::HeaderMap;
+use axum::http::{header::CONTENT_TYPE, HeaderMap};
 use futures::stream;
 use sha2::{Digest, Sha256};
 
@@ -13,7 +13,7 @@ use super::types::AttestationError;
 /// - `profile_picture`: Image file (ignored for hashing)
 pub async fn hash_request(headers: &HeaderMap, body: Bytes) -> Result<String, AttestationError> {
 	let content_type = headers
-		.get("content-type")
+		.get(CONTENT_TYPE)
 		.and_then(|v| v.to_str().ok())
 		.ok_or_else(|| AttestationError::HashError("Missing Content-Type header".to_string()))?;
 
@@ -102,7 +102,9 @@ mod tests {
 		.join("");
 		let body = Bytes::from(body);
 
-		let err = hash_request(&headers, body).await.expect_err("should error");
+		let err = hash_request(&headers, body)
+			.await
+			.expect_err("should error");
 
 		match err {
 			AttestationError::HashError(message) => {

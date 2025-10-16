@@ -154,7 +154,7 @@ impl Config {
 			developer_portal_url: env::var("DEVELOPER_PORTAL_ENDPOINT")
 				.context("DEVELOPER_PORTAL_ENDPOINT environment variable not set")?,
 			attestation_jwks_url: env::var("ATTESTATION_JWKS_URL")
-				.unwrap_or_else(|_| "https://attestation.worldcoin.org/.well-known/jwks.json".to_string()),
+				.context("ATTESTATION_JWKS_URL environment variable not set")?,
 			redis_pool: Some(ConnectionManagerDebug::from(redis_pool)),
 			whitelisted_avatar_domains,
 		})
