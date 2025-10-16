@@ -1,16 +1,14 @@
-use alloy::primitives::{Keccak256, PrimitiveSignature};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{primitives::ByteStream, Client as S3Client};
 use axum::{body::Bytes, extract::Multipart, Extension};
 use axum_jsonschema::Json;
-use base64::{engine::general_purpose::STANDARD, Engine};
+use idkit::session::VerificationLevel;
 use idkit::Proof;
-use k256::elliptic_curve::sec1::ToEncodedPoint;
-use k256::PublicKey as VerifyingKey;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use tracing::{info, warn, Instrument};
+use tracing::{info, warn};
 
 use std::sync::Arc;
 
@@ -25,7 +23,7 @@ use crate::{
 const FIELD_METADATA: &str = "metadata";
 const FIELD_PROFILE_PICTURE: &str = "profile_picture";
 
-fn detect_image_type(bytes: &[u8]) -> Result<&'static str, ()> {
+const fn detect_image_type(bytes: &[u8]) -> Result<&'static str, ()> {
 	if bytes.len() < 12 {
 		return Err(());
 	}
@@ -66,99 +64,13 @@ struct ProfilePictureMetadata {
 	address: String,
 	nullifier_hash: String,
 	verification_level: WrappedVerificationLevel,
-	signature: String,
+	challenge_image_hash: String, // Hash of the challenge image to verify against uploaded profile_picture
 }
 
 #[derive(Debug)]
 struct ProfilePicturePayload {
 	metadata: ProfilePictureMetadata,
 	profile_picture_bytes: Vec<u8>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SigningKeyResponse {
-	attestation: String,
-	public_key: String,
-}
-
-const MAX_SIGNING_KEYS: usize = 5;
-
-async fn verify_key_against_db(
-	db: &Db,
-	recovered_verifying_key_bytes: &[u8],
-) -> Result<bool, ErrorResponse> {
-	// TODO: Change to one per row if we decide to have multiple enclaves.
-	let keys_str = sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
-		.fetch_optional(&db.read_only)
-		.await?;
-
-	// If no row exists or keys are empty, return false
-	let Some(keys_str) = keys_str else {
-		return Ok(false);
-	};
-
-	if keys_str.is_empty() {
-		return Ok(false);
-	}
-
-	// All keys are stored in compressed format (33 bytes), so we can do direct comparison
-	let recovered_key_hex = hex::encode(recovered_verifying_key_bytes);
-	let key_exists = keys_str
-		.split(',')
-		.any(|stored_key_hex| stored_key_hex == recovered_key_hex);
-
-	Ok(key_exists)
-}
-
-async fn add_signing_key_to_db(db: &Db, public_key_hex: &str) -> Result<(), ErrorResponse> {
-	// Fetch current keys (or None if row doesn't exist)
-	let keys_str: Option<String> =
-		sqlx::query_scalar!("SELECT keys FROM verifying_keys WHERE id = 1")
-			.fetch_optional(&db.read_write)
-			.await?;
-
-	let mut keys: Vec<&str> = if let Some(ref keys_str) = keys_str {
-		if keys_str.is_empty() {
-			Vec::new()
-		} else {
-			keys_str.split(',').collect()
-		}
-	} else {
-		Vec::new()
-	};
-
-	// Only add if not already present
-	if !keys.contains(&public_key_hex) {
-		keys.push(public_key_hex);
-
-		// Keep only the last 5 keys (remove oldest from front)
-		if keys.len() > MAX_SIGNING_KEYS {
-			keys = keys[keys.len() - MAX_SIGNING_KEYS..].to_vec();
-		}
-
-		let updated_keys = keys.join(",");
-
-		if keys_str.is_some() {
-			// Update existing row
-			sqlx::query!(
-				"UPDATE verifying_keys SET keys = $1, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
-				updated_keys
-			)
-			.execute(&db.read_write)
-			.await?;
-		} else {
-			// Insert new row
-			sqlx::query!(
-				"INSERT INTO verifying_keys (id, keys) VALUES (1, $1)
-				ON CONFLICT (id) DO UPDATE SET keys = $1, updated_at = CURRENT_TIMESTAMP",
-				updated_keys
-			)
-			.execute(&db.read_write)
-			.await?;
-		}
-	}
-
-	Ok(())
 }
 
 struct ProfilePictureUploadHandler {
@@ -169,7 +81,7 @@ struct ProfilePictureUploadHandler {
 }
 
 impl ProfilePictureUploadHandler {
-	fn new(
+	const fn new(
 		config: Arc<Config>,
 		db: Db,
 		redis: ConnectionManager,
@@ -185,38 +97,35 @@ impl ProfilePictureUploadHandler {
 
 	async fn verify_world_id(&self) -> Result<(), ErrorResponse> {
 		let proof = self.payload.proof();
-		let signal = self.payload.signature();
 
-		if let Err(err) = verify::dev_portal_verify_proof_hex(
+		// We only accept orb verification for profile pictures
+		if proof.verification_level != VerificationLevel::Orb {
+			warn!(
+				?proof.verification_level,
+				"Rejected profile picture upload with insufficient verification level"
+			);
+			return Err(ErrorResponse::bad_request(
+				"insufficient_verification_level",
+			));
+		}
+
+		if let Err(err) = verify::dev_portal_verify_proof(
 			proof,
 			self.config.wld_app_id.to_string(),
 			"username",
-			signal,
+			self.payload.address(),
 			self.config.developer_portal_url.clone(),
 		)
 		.await
 		{
 			let response = match err {
-				verify::Error::Verification(e) => {
-					tracing::error!(
-						detail = %e.detail,
-						nullifier_hash = %self.payload.nullifier_hash(),
-						address = %self.payload.address_checksum(),
-						"Profile picture verification error",
-					);
-					ErrorResponse::validation_error(e.detail)
-				},
-				other => {
-					tracing::error!(
-						error = %other,
-						nullifier_hash = %self.payload.nullifier_hash(),
-						address = %self.payload.address_checksum(),
-						"Profile picture verification request failed",
-					);
-					ErrorResponse::server_error("Failed to verify World ID proof".to_string())
-				},
+				verify::Error::Verification(_) => ErrorResponse::bad_request("invalid_proof"),
+				verify::Error::Reqwest(_)
+				| verify::Error::Serde(_)
+				| verify::Error::InvalidResponse { .. } => ErrorResponse::server_error(
+					"An error occurred verifying the proof, please try again later".to_string(),
+				),
 			};
-
 			return Err(response);
 		}
 
@@ -224,176 +133,68 @@ impl ProfilePictureUploadHandler {
 	}
 
 	async fn verify_username_exists(&self) -> Result<String, ErrorResponse> {
-		let username_row = sqlx::query!(
-			"SELECT username FROM names WHERE nullifier_hash = $1 AND LOWER(address) = LOWER($2)",
-			self.payload.nullifier_hash(),
-			self.payload.address_checksum()
+		let username = sqlx::query_scalar!(
+			"SELECT username FROM names WHERE LOWER(address) = LOWER($1)",
+			self.payload.address()
 		)
 		.fetch_optional(&self.db.read_only)
-		.instrument(tracing::info_span!(
-			"profile_picture_lookup",
-			nullifier_hash = %self.payload.nullifier_hash(),
-			address = %self.payload.address_checksum()
-		))
 		.await?;
 
-		let Some(record) = username_row else {
-			return Err(ErrorResponse::validation_error(
-				"No record found matching provided credentials".to_string(),
-			));
-		};
-
-		Ok(record.username)
+		username.ok_or_else(|| {
+			warn!(
+				address = self.payload.address(),
+				"Address does not have a username"
+			);
+			ErrorResponse::bad_request("address_without_username")
+		})
 	}
 
-	fn recover_signature(&self) -> Result<Vec<u8>, ErrorResponse> {
-		let address = self.payload.address();
+	fn verify_challenge_image_hash(&self) -> Result<(), ErrorResponse> {
+		// Compute SHA256 hash of the uploaded profile picture
+		let mut hasher = Sha256::new();
+		hasher.update(self.payload.image_bytes());
+		let computed_hash = hex::encode(hasher.finalize());
 
-		// Parse wallet address to bytes (strip 0x if present, decode hex)
-		let wallet_address_bytes = {
-			let addr = address.trim_start_matches("0x");
-			hex::decode(addr).map_err(|err| {
-				warn!(error = %err, "invalid wallet address hex");
-				ErrorResponse::validation_error("Invalid wallet address".to_string())
-			})?
-		};
+		// The challenge_image_hash should match exactly
+		let expected_hash = self.payload.challenge_image_hash().trim_start_matches("0x");
 
-		if wallet_address_bytes.len() != 20 {
+		if computed_hash != expected_hash {
 			warn!(
-				len = wallet_address_bytes.len(),
-				"wallet address must be 20 bytes"
+				computed_hash = %computed_hash,
+				expected_hash = %expected_hash,
+				"Challenge image hash mismatch - uploaded image does not match expected hash"
 			);
 			return Err(ErrorResponse::validation_error(
-				"Invalid wallet address length".to_string(),
+				"Uploaded image does not match challenge image hash".to_string(),
 			));
 		}
 
-		// Hash: wallet_address_bytes + "-" + image_bytes (matching reference implementation)
-		let mut hasher = Keccak256::new();
-		hasher.update(&wallet_address_bytes);
-		hasher.update(b"-");
-		hasher.update(self.payload.image_bytes());
-		let digest = hasher.finalize();
-
-		let signature_input = self.payload.signature();
-		let signature_str = signature_input
-			.strip_prefix("0x")
-			.unwrap_or(signature_input);
-
-		// Decode the hex signature (should be 65 bytes: 64-byte signature + 1-byte recovery ID)
-		let signature_bytes = hex::decode(signature_str).map_err(|_err| {
-			ErrorResponse::validation_error("Invalid signature provided".to_string())
-		})?;
-
-		if signature_bytes.len() != 65 {
-			return Err(ErrorResponse::validation_error(
-				"Invalid signature length".to_string(),
-			));
-		}
-
-		let signature =
-			PrimitiveSignature::try_from(signature_bytes.as_slice()).map_err(|_err| {
-				ErrorResponse::validation_error("Invalid signature bytes provided".to_string())
-			})?;
-
-		// recover_from_prehash expects the 32-byte hash
-		let recovered_verifying_key = signature.recover_from_prehash(&digest).map_err(|err| {
-			warn!(error = %err, "failed to recover verifying key from signature");
-			ErrorResponse::validation_error("Unable to recover signature".to_string())
-		})?;
-
-		let recovered_verifying_key_bytes =
-			recovered_verifying_key.to_encoded_point(true).to_bytes();
-
-		Ok(recovered_verifying_key_bytes.to_vec())
-	}
-
-	async fn verify_signature(&self, recovered_key_bytes: &[u8]) -> Result<(), ErrorResponse> {
-		let mut key_valid = verify_key_against_db(&self.db, recovered_key_bytes).await?;
-
-		// If not valid, fetch the current signing key from the DF service
-		if !key_valid {
-			let df_url = std::env::var("DF_URL").map_err(|_| {
-				warn!("DF_URL environment variable not set");
-				ErrorResponse::server_error("Configuration error".to_string())
-			})?;
-
-			let client = reqwest::Client::new();
-			let response = client
-				.get(format!("{}/v1/enclave/signing-key", df_url))
-				.send()
-				.await
-				.map_err(|err| {
-					warn!(error = %err, "failed to fetch signing key from DF service");
-					ErrorResponse::server_error("Failed to verify signature".to_string())
-				})?;
-
-			let signing_key_data: SigningKeyResponse = response.json().await.map_err(|err| {
-				warn!(error = %err, "failed to parse signing key response");
-				ErrorResponse::server_error("Failed to verify signature".to_string())
-			})?;
-			// TODO: Verify the attestation before trusting the public key
-
-			// Decode the base64 compressed public key (33 bytes) from DF service
-			let df_public_key_bytes =
-				STANDARD
-					.decode(&signing_key_data.public_key)
-					.map_err(|err| {
-						warn!(error = %err, "failed to decode base64 public key");
-						ErrorResponse::server_error("Failed to verify signature".to_string())
-					})?;
-
-			// Parse as compressed SEC1 format (33 bytes)
-			let df_verifying_key =
-				VerifyingKey::from_sec1_bytes(&df_public_key_bytes).map_err(|err| {
-					warn!(error = ?err, "failed to parse DF public key");
-					ErrorResponse::server_error("Failed to verify signature".to_string())
-				})?;
-
-			// Store in compressed format for consistent comparison
-			let df_compressed_bytes = df_verifying_key.to_encoded_point(true).to_bytes();
-			let df_compressed_hex = hex::encode(&*df_compressed_bytes);
-			add_signing_key_to_db(&self.db, &df_compressed_hex).await?;
-
-			// Direct byte comparison (both are compressed)
-			if &*df_compressed_bytes == recovered_key_bytes {
-				key_valid = true;
-				info!(
-					public_key = %signing_key_data.public_key,
-					"verified signature against DF signing key"
-				);
-			}
-		}
-
-		if !key_valid {
-			return Err(ErrorResponse::validation_error(
-				"Signature did not match any keys".to_string(),
-			));
-		}
+		info!(
+			hash = %computed_hash,
+			"Challenge image hash verified successfully"
+		);
 
 		Ok(())
 	}
 
 	async fn upload_to_s3(&self) -> Result<String, ErrorResponse> {
-		let aws_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
-		let s3_client = S3Client::new(&aws_config);
+		let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
+		let s3_client = S3Client::new(&config);
 
-		let bucket_name = std::env::var("UPLOADS_BUCKET_NAME").map_err(|_| {
-			warn!("UPLOADS_BUCKET_NAME environment variable not set");
-			ErrorResponse::server_error("Configuration error".to_string())
-		})?;
+		let bucket_name = std::env::var("UPLOADS_BUCKET_NAME")
+			.map_err(|_| ErrorResponse::server_error("Configuration error".to_string()))?;
+
 		let object_key = format!("{}/profile", self.payload.address());
-
-		// Detect content type from magic bytes
-		let content_type = detect_image_type(self.payload.image_bytes())
-			.map_err(|_| ErrorResponse::server_error("Failed to detect image type".to_string()))?;
 
 		s3_client
 			.put_object()
-			.bucket(bucket_name)
+			.bucket(&bucket_name)
 			.key(&object_key)
 			.body(ByteStream::from(self.payload.image_bytes().to_vec()))
-			.content_type(content_type)
+			.content_type(
+				detect_image_type(self.payload.image_bytes())
+					.unwrap_or("application/octet-stream"),
+			)
 			.send()
 			.await
 			.map_err(|err| {
@@ -431,7 +232,7 @@ impl ProfilePictureUploadHandler {
 
 		let address_cache_key =
 			format!("query_single:{}", validate_address(self.payload.address()));
-		let username_cache_key = format!("query_single:{}", username);
+		let username_cache_key = format!("query_single:{username}");
 
 		let _: Result<(), redis::RedisError> = self.redis.del(&address_cache_key).await;
 		let _: Result<(), redis::RedisError> = self.redis.del(&username_cache_key).await;
@@ -442,15 +243,17 @@ impl ProfilePictureUploadHandler {
 	async fn execute(mut self) -> Result<ProfilePictureUploadResponse, ErrorResponse> {
 		info!(
 			nullifier_hash = %self.payload.nullifier_hash(),
-			address = %self.payload.address_checksum(),
+			address = %self.payload.address(),
 			bytes = self.payload.image_bytes().len(),
-			"processing profile picture upload"
+			challenge_image_hash = %self.payload.challenge_image_hash(),
+			"processing profile picture upload (v2 with attestation)"
 		);
+
+		// Verify the uploaded image matches the challenge image hash
+		self.verify_challenge_image_hash()?;
 
 		self.verify_world_id().await?;
 		let username = self.verify_username_exists().await?;
-		let recovered_key = self.recover_signature()?;
-		self.verify_signature(&recovered_key).await?;
 
 		let object_key = self.upload_to_s3().await?;
 		let profile_picture_url = self.update_profile_picture_url(&object_key).await?;
@@ -458,7 +261,7 @@ impl ProfilePictureUploadHandler {
 		// Invalidate cache for both address and username lookups
 		self.invalidate_cache(&username).await?;
 
-		info!(url = %profile_picture_url, "Profile picture uploaded and database updated successfully");
+		info!(url = %profile_picture_url, "Profile picture uploaded and database updated successfully (v2)");
 
 		Ok(ProfilePictureUploadResponse {
 			profile_picture_url,
@@ -469,6 +272,9 @@ impl ProfilePictureUploadHandler {
 impl ProfilePicturePayload {
 	async fn from_multipart(mut multipart: Multipart) -> Result<Self, ErrorResponse> {
 		let mut fields = extract_fields_from_multipart(&mut multipart).await?;
+
+		// Note: metadata and idempotency_key are consumed by attestation middleware for hashing
+		// The request body is reconstructed by the middleware, so all fields are still available here
 
 		let metadata_bytes = fields.remove(FIELD_METADATA).ok_or_else(|| {
 			ErrorResponse::validation_error(format!("Missing multipart field: {FIELD_METADATA}"))
@@ -509,20 +315,16 @@ impl ProfilePicturePayload {
 		}
 	}
 
-	fn address_checksum(&self) -> &str {
-		&self.metadata.address
-	}
-
 	fn address(&self) -> &str {
 		&self.metadata.address
 	}
 
-	fn signature(&self) -> &str {
-		self.metadata.signature.as_str()
-	}
-
 	fn nullifier_hash(&self) -> &str {
 		self.metadata.nullifier_hash.as_str()
+	}
+
+	fn challenge_image_hash(&self) -> &str {
+		self.metadata.challenge_image_hash.as_str()
 	}
 
 	fn image_bytes(&self) -> &[u8] {
@@ -530,6 +332,8 @@ impl ProfilePicturePayload {
 	}
 }
 
+/// This endpoint requires an attestation token to be provided in the request header
+/// The attestation middleware handles all security verification
 #[tracing::instrument(skip_all)]
 pub async fn upload_profile_picture(
 	Extension(config): ConfigExt,
