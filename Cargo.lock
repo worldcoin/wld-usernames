@@ -2593,7 +2593,7 @@ dependencies = [
  "chrono",
  "futures",
  "hyper 1.7.0",
- "jsonwebtoken",
+ "jsonwebtoken 9.3.0",
  "once_cell",
  "prost",
  "prost-types",
@@ -3378,6 +3378,22 @@ dependencies = [
  "ring",
  "serde",
  "serde_json",
+ "simple_asn1",
+]
+
+[[package]]
+name = "jsonwebtoken"
+version = "10.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1417155a38e99d7704ddb3ea7445fe57fdbd5d756d727740a9ed8b9ebaed6e1"
+dependencies = [
+ "base64 0.22.1",
+ "getrandom 0.2.15",
+ "js-sys",
+ "pem",
+ "serde",
+ "serde_json",
+ "signature 2.2.0",
  "simple_asn1",
 ]
 
@@ -5243,9 +5259,9 @@ checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
 
 [[package]]
 name = "sha2"
-version = "0.10.8"
+version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "793db75ad2bcafc3ffa7c68b215fee268f537982cd901d132f89c6343f3a3dc8"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -6844,7 +6860,7 @@ dependencies = [
  "hex",
  "http 1.2.0",
  "idkit",
- "jsonwebtoken",
+ "jsonwebtoken 10.0.0",
  "k256",
  "log-panics",
  "multer",

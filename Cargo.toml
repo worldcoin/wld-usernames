@@ -66,8 +66,8 @@ log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 backon = "1.5.1"
 base64 = "0.22.1"
 k256 = "0.13.4"
-jsonwebtoken = "9.3.0"
-sha2 = "0.10.8"
+jsonwebtoken = "10.0.0"
+sha2 = "0.10.9"
 multer = "3.1.0"
 
 
