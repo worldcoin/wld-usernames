@@ -1,5 +1,6 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 
+mod attestation;
 mod blocklist;
 mod config;
 mod data_deletion_worker;
