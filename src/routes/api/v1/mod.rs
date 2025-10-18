@@ -3,6 +3,7 @@ use aide::axum::{
 	ApiRouter,
 };
 use axum::{middleware, routing::post as axum_post, Extension};
+use redis::aio::ConnectionManager;
 use std::sync::Arc;
 
 mod avatar;
@@ -67,8 +68,12 @@ pub fn handler() -> ApiRouter {
 		.route(
 			"/profile-picture",
 			axum_post(upload_profile_picture).route_layer(middleware::from_fn(
-				|Extension(jwks_cache): Extension<Arc<JwksCache>>, headers, request, next| async move {
-					attestation_middleware(jwks_cache, headers, request, next).await
+				|Extension(jwks_cache): Extension<Arc<JwksCache>>,
+				 Extension(redis): Extension<ConnectionManager>,
+				 headers,
+				 request,
+				 next| async move {
+					attestation_middleware(jwks_cache, redis, headers, request, next).await
 				},
 			)),
 		)
