@@ -67,7 +67,7 @@ impl IntoResponse for AttestationError {
 			| Self::KeyNotFound(_)
 			| Self::SignatureVerificationFailed(_)
 			| Self::HashMismatch
-			| Self::ReplayDetected => StatusCode::UNAUTHORIZED,
+			| Self::InvalidRequest => StatusCode::UNAUTHORIZED,
 
 			// 400 BAD_REQUEST - Client errors
 			Self::InvalidToken(_) | Self::MissingKid | Self::HashError(_) => {
