@@ -13,12 +13,6 @@ pub async fn query_multiple(
 	Extension(db): Extension<Db>,
 	Json(payload): Json<QueryMultiplePayload>,
 ) -> Result<Json<Vec<UsernameRecord>>, ErrorResponse> {
-	tracing::info!(
-		"query_multiple called with {} addresses and {} usernames",
-		payload.addresses.len(),
-		payload.usernames.len()
-	);
-
 	let addresses = payload
 		.addresses
 		.iter()
@@ -31,9 +25,6 @@ pub async fn query_multiple(
 		.map(|u| u.to_lowercase())
 		.collect::<Vec<_>>();
 
-	tracing::info!("Processing {} addresses: {:?}", addresses.len(), addresses);
-	tracing::info!("Processing {} usernames: {:?}", usernames.len(), usernames);
-
 	if addresses.is_empty() && usernames.is_empty() {
 		return Ok(Json(Vec::new()));
 	}
@@ -42,7 +33,6 @@ pub async fn query_multiple(
 	let mut seen_usernames = HashSet::new();
 
 	if !addresses.is_empty() {
-		tracing::info!("Querying database for addresses...");
 		let address_matches = sqlx::query_as!(
 			Name,
 			"SELECT * FROM names WHERE address = ANY($1::text[])",
