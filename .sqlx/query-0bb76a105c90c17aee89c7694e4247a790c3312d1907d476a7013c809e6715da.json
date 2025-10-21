@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM names WHERE address = ANY($1)",
+  "query": "SELECT * FROM names WHERE address = ANY($1::text[])",
   "describe": {
     "columns": [
       {
@@ -60,5 +60,5 @@
       true
     ]
   },
-  "hash": "1feeb2a8cdcaeb8da85e87209749f0e229b91ea2e7d102014fc11d50df22cfdc"
+  "hash": "0bb76a105c90c17aee89c7694e4247a790c3312d1907d476a7013c809e6715da"
 }
