@@ -9,7 +9,7 @@ use url::Url;
 
 use crate::{
 	config::{Config, ConfigExt, Db},
-	types::{AvatarQueryParams, ErrorResponse, MovedRecord},
+	types::{AvatarQueryParams, ErrorResponse, MovedRecord, Name},
 	utils::ONE_MINUTE_IN_SECONDS,
 };
 
@@ -31,13 +31,12 @@ pub async fn avatar(
 		return Ok(Redirect::temporary(&avatar_url).into_response());
 	}
 
-	if let Some(record) = sqlx::query!(
-		"SELECT username, profile_picture_url, minimized_profile_picture_url FROM names WHERE LOWER(username) = LOWER($1)",
-		name
-	)
-	.fetch_optional(&db.read_only)
-	.instrument(info_span!("avatar_db_query", input = name))
-	.await?
+	if let Some(record) =
+		sqlx::query_as::<_, Name>("SELECT * FROM names WHERE LOWER(username) = LOWER($1)")
+			.bind(name.as_str())
+			.fetch_optional(&db.read_only)
+			.instrument(info_span!("avatar_db_query", input = name))
+			.await?
 	{
 		let profile_picture_url = if minimized {
 			record.minimized_profile_picture_url

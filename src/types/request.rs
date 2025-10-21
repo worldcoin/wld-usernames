@@ -38,9 +38,16 @@ impl RegisterUsernamePayload {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct QueryAddressesPayload {
+pub struct QueryMultiplePayload {
 	/// A list of addresses to resolve.
+	#[serde(default)]
+	#[schemars(default)]
 	pub addresses: Vec<Address>,
+
+	/// List of usernames to resolve.
+	#[serde(default)]
+	#[schemars(default)]
+	pub usernames: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
