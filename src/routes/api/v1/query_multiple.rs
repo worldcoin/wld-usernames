@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use axum::Extension;
 use axum_jsonschema::Json;
@@ -29,8 +29,7 @@ pub async fn query_multiple(
 		return Ok(Json(Vec::new()));
 	}
 
-	let mut names: Vec<Name> = Vec::new();
-	let mut seen_usernames = HashSet::new();
+	let mut names_by_address: HashMap<String, Name> = HashMap::new();
 
 	if !addresses.is_empty() {
 		let address_matches = sqlx::query_as!(
@@ -46,9 +45,7 @@ pub async fn query_multiple(
 		.await?;
 
 		for name in address_matches {
-			if seen_usernames.insert(name.username.clone()) {
-				names.push(name);
-			}
+			names_by_address.entry(name.address.clone()).or_insert(name);
 		}
 	}
 
@@ -66,13 +63,14 @@ pub async fn query_multiple(
 		.await?;
 
 		for name in username_matches {
-			if seen_usernames.insert(name.username.clone()) {
-				names.push(name);
-			}
+			names_by_address.entry(name.address.clone()).or_insert(name);
 		}
 	}
 
-	let records_json: Vec<UsernameRecord> = names.into_iter().map(UsernameRecord::from).collect();
+	let records_json: Vec<UsernameRecord> = names_by_address
+		.into_values()
+		.map(UsernameRecord::from)
+		.collect();
 
 	Ok(Json(records_json))
 }
