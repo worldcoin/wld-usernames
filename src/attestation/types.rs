@@ -4,20 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JwksKey {
-	pub kid: String,
-	pub kty: String,
-	pub alg: String,
-	#[serde(flatten)]
-	pub key_data: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Jwks {
-	pub keys: Vec<JwksKey>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttestationClaims {
 	pub jti: String,
 	pub exp: i64,

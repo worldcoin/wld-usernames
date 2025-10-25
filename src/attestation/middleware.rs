@@ -44,15 +44,20 @@ pub async fn attestation_middleware(
 	let jwk = jwks_cache.get_key(&kid).await?;
 
 	// Step 3: Verify the JWT signature
-	let alg: Algorithm = jwk.alg.parse().map_err(|_| {
-		tracing::warn!("Unsupported algorithm: {}", jwk.alg);
-		AttestationError::InvalidToken(format!("Unsupported algorithm: {}", jwk.alg))
-	})?;
+	// Extract algorithm from JWK's common parameters or infer from key type
+	let alg: Algorithm = jwk
+		.common
+		.key_algorithm
+		.as_ref()
+		.and_then(|alg| alg.to_string().parse().ok())
+		.ok_or_else(|| {
+			tracing::warn!("Missing or unsupported algorithm in JWK");
+			AttestationError::InvalidToken("Missing or unsupported algorithm in JWK".into())
+		})?;
 
 	// Convert JWK to DecodingKey
-	let decoding_key = jwk_to_decoding_key(&jwk).map_err(|e| {
-		tracing::warn!("Failed to create decoding key: {e}");
-		e
+	let decoding_key = DecodingKey::from_jwk(&jwk).map_err(|e| {
+		AttestationError::InvalidToken(format!("Failed to create decoding key: {e}"))
 	})?;
 
 	let mut validation = Validation::new(alg);
@@ -96,14 +101,4 @@ pub async fn attestation_middleware(
 	let request = Request::from_parts(parts, Body::from(body_bytes));
 
 	Ok(next.run(request).await)
-}
-
-/// Convert JWK to DecodingKey
-fn jwk_to_decoding_key(jwk: &super::types::JwksKey) -> Result<DecodingKey, AttestationError> {
-	// Serialize the JWK back to JSON for the jsonwebtoken library
-	let jwk_json = serde_json::to_string(jwk)
-		.map_err(|e| AttestationError::InvalidToken(format!("JWK serialization error: {e}")))?;
-
-	DecodingKey::from_jwk(&serde_json::from_str(&jwk_json).unwrap())
-		.map_err(|e| AttestationError::InvalidToken(format!("Invalid JWK: {e}")))
 }

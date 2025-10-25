@@ -1,7 +1,8 @@
+use jsonwebtoken::jwk::{Jwk, JwkSet};
 use redis::{aio::ConnectionManager, AsyncCommands};
 use std::time::Duration;
 
-use super::types::{AttestationError, Jwks, JwksKey};
+use super::types::AttestationError;
 
 pub struct JwksCache {
 	jwks_url: String,
@@ -12,21 +13,27 @@ pub struct JwksCache {
 
 impl JwksCache {
 	pub fn new(jwks_url: String, ttl: Duration, redis: ConnectionManager) -> Self {
+		// Create client with User-Agent header to avoid 403 cloudflare errors
+		let client = reqwest::Client::builder()
+			.user_agent("wld-usernames/0.1.0")
+			.build()
+			.unwrap_or_else(|_| reqwest::Client::new());
+
 		Self {
 			jwks_url,
 			ttl,
 			redis,
-			client: reqwest::Client::new(),
+			client,
 		}
 	}
 
-	pub async fn get_key(&self, kid: &str) -> Result<JwksKey, AttestationError> {
+	pub async fn get_key(&self, kid: &str) -> Result<Jwk, AttestationError> {
 		let cache_key = format!("jwks:key:{}", kid);
 
 		// Try to get from cache
 		let mut redis = self.redis.clone();
 		if let Ok(cached) = redis.get::<_, String>(&cache_key).await {
-			if let Ok(key) = serde_json::from_str::<JwksKey>(&cached) {
+			if let Ok(key) = serde_json::from_str::<Jwk>(&cached) {
 				return Ok(key);
 			}
 		}
@@ -38,15 +45,14 @@ impl JwksCache {
 			.send()
 			.await
 			.map_err(|e| AttestationError::JwksFetchError(e.to_string()))?
-			.json::<Jwks>()
+			.json::<JwkSet>()
 			.await
 			.map_err(|e| AttestationError::JwksFetchError(e.to_string()))?;
 
-		// Find the key
+		// Find the key using JwkSet's built-in find method
 		let key = jwks
-			.keys
-			.into_iter()
-			.find(|k| k.kid == kid)
+			.find(kid)
+			.cloned()
 			.ok_or_else(|| AttestationError::KeyNotFound(kid.to_string()))?;
 
 		// Cache it
