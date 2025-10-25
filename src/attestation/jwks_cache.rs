@@ -13,11 +13,17 @@ pub struct JwksCache {
 
 impl JwksCache {
 	pub fn new(jwks_url: String, ttl: Duration, redis: ConnectionManager) -> Self {
+		// Create client with User-Agent header to avoid 403 cloudflare errors
+		let client = reqwest::Client::builder()
+			.user_agent("wld-usernames/0.1.0")
+			.build()
+			.unwrap_or_else(|_| reqwest::Client::new());
+
 		Self {
 			jwks_url,
 			ttl,
 			redis,
-			client: reqwest::Client::new(),
+			client,
 		}
 	}
 
