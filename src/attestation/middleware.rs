@@ -63,6 +63,8 @@ pub async fn attestation_middleware(
 	let mut validation = Validation::new(alg);
 	validation.set_required_spec_claims(&["exp", "iss"]);
 	validation.validate_exp = true;
+	// Turn off audience validation, this can be set to anything by the client and is not relevant here
+	validation.validate_aud = false;
 	validation.validate_nbf = false; // attestation-gateway tokens don't include `nbf` claim
 	validation.set_issuer(&["attestation.worldcoin.org"]);
 
