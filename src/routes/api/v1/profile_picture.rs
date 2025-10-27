@@ -200,6 +200,7 @@ impl ProfilePictureUploadHandler {
 					.unwrap_or("application/octet-stream"),
 			)
 			.send()
+			.instrument(info_span!("s3.upload_verified_profile_picture"))
 			.await
 			.map_err(|err| {
 				warn!(error = %err, address = %self.payload.address(), "failed to upload profile picture to S3");
