@@ -61,7 +61,10 @@ pub async fn attestation_middleware(
 	})?;
 
 	let mut validation = Validation::new(alg);
+	validation.set_required_spec_claims(&["exp", "nbf", "iss"]);
 	validation.validate_exp = true;
+	validation.validate_nbf = true;
+	validation.set_issuer(&["attestation.worldcoin.org"]);
 
 	let token_data =
 		decode::<AttestationClaims>(token, &decoding_key, &validation).map_err(|e| {

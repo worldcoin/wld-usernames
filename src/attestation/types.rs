@@ -6,11 +6,6 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttestationClaims {
 	pub jti: String,
-	// Use `serde_json::Number` because `exp` could be a floating number or an integer
-	pub exp: serde_json::Number,
-	pub iat: serde_json::Number,
-	#[serde(flatten)]
-	pub extra: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, thiserror::Error)]
