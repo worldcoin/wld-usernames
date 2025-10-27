@@ -1,4 +1,6 @@
 use anyhow::Context;
+use aws_config::BehaviorVersion;
+use aws_sdk_s3::Client as S3Client;
 use axum::Extension;
 use idkit::session::AppId;
 use once_cell::sync::OnceCell;
@@ -59,6 +61,7 @@ pub struct Config {
 	db_read_client: Option<PgPool>,
 	redis_pool: Option<ConnectionManagerDebug>,
 	blocklist: Option<Blocklist>,
+	s3_client: S3Client,
 }
 #[derive(Clone)]
 pub struct Db {
@@ -125,6 +128,11 @@ impl Config {
 
 		tracing::info!("✅ Connection to Redis established.");
 
+		let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
+		let s3_client = S3Client::new(&config);
+
+		tracing::info!("✅ S3 client initialized.");
+
 		// Initialize OpenSearch client
 		if OPENSEARCH_CLIENT.get().is_none() {
 			match OpenSearchClient::new().await {
@@ -157,6 +165,7 @@ impl Config {
 				.context("ATTESTATION_JWKS_URL environment variable not set")?,
 			redis_pool: Some(ConnectionManagerDebug::from(redis_pool)),
 			whitelisted_avatar_domains,
+			s3_client,
 		})
 	}
 
@@ -196,6 +205,10 @@ impl Config {
 			redis,
 		);
 		Extension(Arc::new(jwks_cache))
+	}
+
+	pub fn s3_client(&self) -> S3Client {
+		self.s3_client.clone()
 	}
 }
 
