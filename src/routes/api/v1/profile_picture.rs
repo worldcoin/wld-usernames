@@ -1,5 +1,4 @@
-use aws_config::BehaviorVersion;
-use aws_sdk_s3::{primitives::ByteStream, Client as S3Client};
+use aws_sdk_s3::primitives::ByteStream;
 use axum::{body::Bytes, extract::Multipart, Extension};
 use axum_jsonschema::Json;
 use idkit::session::VerificationLevel;
@@ -8,7 +7,7 @@ use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use tracing::{info, warn};
+use tracing::{info, info_span, warn, Instrument};
 
 use std::sync::Arc;
 
@@ -184,8 +183,7 @@ impl ProfilePictureUploadHandler {
 	}
 
 	async fn upload_to_s3(&self) -> Result<String, ErrorResponse> {
-		let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
-		let s3_client = S3Client::new(&config);
+		let s3_client = self.config.s3_client();
 
 		let bucket_name = std::env::var("UPLOADS_BUCKET_NAME")
 			.map_err(|_| ErrorResponse::server_error("Configuration error".to_string()))?;
@@ -228,6 +226,7 @@ impl ProfilePictureUploadHandler {
 			self.payload.address()
 		)
 		.execute(&self.db.read_write)
+		.instrument(info_span!("update_profile_picture_db", address = %self.payload.address()))
 		.await?;
 
 		Ok(profile_picture_url)
@@ -240,8 +239,16 @@ impl ProfilePictureUploadHandler {
 			format!("query_single:{}", validate_address(self.payload.address()));
 		let username_cache_key = format!("query_single:{username}");
 
-		let _: Result<(), redis::RedisError> = self.redis.del(&address_cache_key).await;
-		let _: Result<(), redis::RedisError> = self.redis.del(&username_cache_key).await;
+		let _: Result<(), redis::RedisError> = self
+			.redis
+			.del(&address_cache_key)
+			.instrument(info_span!("redis.delete_query_single_address"))
+			.await;
+		let _: Result<(), redis::RedisError> = self
+			.redis
+			.del(&username_cache_key)
+			.instrument(info_span!("redis.delete_query_single_username"))
+			.await;
 
 		Ok(())
 	}
@@ -267,7 +274,7 @@ impl ProfilePictureUploadHandler {
 		// Invalidate cache for both address and username lookups
 		self.invalidate_cache(&username).await?;
 
-		info!(url = %profile_picture_url, "Profile picture uploaded and database updated successfully (v2)");
+		info!(url = %profile_picture_url,address = %self.payload.address(), "Profile picture uploaded and database updated successfully (v2)");
 
 		Ok(ProfilePictureUploadResponse {
 			profile_picture_url,
