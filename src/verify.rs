@@ -1,4 +1,3 @@
-use alloy::hex;
 use backon::{ExponentialBuilder, Retryable};
 use idkit::{hashing::hash_to_field, session::VerificationLevel, Proof};
 use reqwest::{header, StatusCode};

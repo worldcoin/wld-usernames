@@ -68,7 +68,7 @@ pub fn handler() -> ApiRouter {
 		)
 		.api_route(
 			"/profile-picture",
-			delete_with(delete_profile_picture, delete_profile_picture_docs).layer(cors.clone()),
+			delete_with(delete_profile_picture, delete_profile_picture_docs).layer(cors),
 		)
 		.route(
 			"/profile-picture",
