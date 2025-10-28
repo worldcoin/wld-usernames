@@ -100,7 +100,7 @@ pub async fn delete_profile_picture(
 		cdn_base_url.trim_end_matches('/'),
 		address.to_lowercase()
 	);
-
+	// We use the existing schema for minimized and verified
 	let minimized_marble_url = format!(
 		"{}/minimized_{}.png",
 		cdn_base_url.trim_end_matches('/'),
