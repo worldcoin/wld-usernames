@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE names\n\t\t\t SET profile_picture_url = $1, updated_at = CURRENT_TIMESTAMP\n\t\t\t WHERE address = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "240a179d0f0bf8e16f1bf3f973a333cab727edeba9ab16ced4c0c72992352372"
+}
