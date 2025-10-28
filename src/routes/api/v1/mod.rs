@@ -1,11 +1,12 @@
 use aide::axum::{
-	routing::{get_with, post_with},
+	routing::{delete_with, get_with, post_with},
 	ApiRouter,
 };
 use axum::{middleware, routing::post as axum_post, Extension};
 use std::sync::Arc;
 
 mod avatar;
+mod delete_profile_picture;
 mod ens_gateway;
 mod profile_picture;
 mod query_multiple;
@@ -16,6 +17,7 @@ mod search;
 mod update_record;
 
 use avatar::{avatar, docs as avatar_docs};
+use delete_profile_picture::{delete_profile_picture, docs as delete_profile_picture_docs};
 use ens_gateway::{docs as ens_gateway_docs, ens_gateway_get, ens_gateway_post};
 use http::Method;
 use profile_picture::upload_profile_picture;
@@ -63,6 +65,10 @@ pub fn handler() -> ApiRouter {
 		.api_route(
 			"/search/:username",
 			get_with(search, search_docs).layer(cors),
+		)
+		.api_route(
+			"/profile-picture",
+			delete_with(delete_profile_picture, delete_profile_picture_docs).layer(cors),
 		)
 		.route(
 			"/profile-picture",
