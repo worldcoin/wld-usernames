@@ -5,6 +5,7 @@ use axum_jsonschema::Json;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use tracing::{info, info_span, warn, Instrument};
 
+use super::validate_address;
 use crate::{
 	config::{Config, ConfigExt, Db},
 	types::{DeleteProfilePicturePayload, ErrorResponse, Name},
@@ -58,8 +59,8 @@ pub async fn delete_profile_picture(
 
 	let Some(record) = sqlx::query_as!(
 		Name,
-		"SELECT * FROM names WHERE LOWER(address) = LOWER($1)",
-		query_address
+		"SELECT * FROM names WHERE address = $1",
+		validate_address(query_address.as_str())
 	)
 	.fetch_optional(&db.read_only)
 	.instrument(info_span!(
