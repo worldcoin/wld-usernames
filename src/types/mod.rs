@@ -9,8 +9,8 @@ pub use database::{MovedAddress, MovedRecord, Name, NameSearch};
 pub use ens::{resolveCall as ResolveRequest, Method};
 pub use error::{ENSErrorResponse, ErrorResponse};
 pub use request::{
-	AvatarQueryParams, ENSQueryPayload, QueryMultiplePayload, RegisterUsernamePayload,
-	RenamePayload, UpdateUsernamePayload,
+	AvatarQueryParams, DeleteProfilePicturePayload, ENSQueryPayload, QueryMultiplePayload,
+	RegisterUsernamePayload, RenamePayload, UpdateUsernamePayload,
 };
 pub use response::{ENSResponse, ProfilePictureUploadResponse, UsernameRecord};
 pub use wrappers::{Address, VerificationLevel};

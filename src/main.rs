@@ -4,6 +4,7 @@ mod attestation;
 mod blocklist;
 mod config;
 mod data_deletion_worker;
+mod deletion;
 mod routes;
 mod search;
 mod server;
