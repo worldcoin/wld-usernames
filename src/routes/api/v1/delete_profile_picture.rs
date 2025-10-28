@@ -17,6 +17,8 @@ const DELETION_TAG_VALUE: &str = "true";
 
 #[tracing::instrument(skip_all)]
 #[allow(dependency_on_unit_never_type_fallback)]
+/// This endpoint uses a proof for authentication
+/// Deletes a user-uploaded profile picture and reverts it to the default marble image.
 pub async fn delete_profile_picture(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<Db>,
