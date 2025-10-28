@@ -53,7 +53,7 @@ pub async fn delete_profile_picture(
 				"Failed to verify World ID proof".to_string(),
 			));
 		},
-	};
+	}
 
 	let query_address = address_checksum.clone();
 
@@ -136,10 +136,10 @@ pub async fn delete_profile_picture(
 		mark_object_for_deletion(config.as_ref(), &cdn_base_url, url).await;
 	}
 
-	let address_cache_key = format!("query_single:{}", address_checksum);
-	let username_cache_key = format!("query_single:{}", username);
-	let avatar_original_cache_key = format!("avatar:{}:original", username);
-	let avatar_minimized_cache_key = format!("avatar:{}:minimized", username);
+	let address_cache_key = format!("query_single:{address_checksum}");
+	let username_cache_key = format!("query_single:{username}");
+	let avatar_original_cache_key = format!("avatar:{username}:original");
+	let avatar_minimized_cache_key = format!("avatar:{username}:minimized");
 
 	let _: Result<(), redis::RedisError> = redis.del(address_cache_key).await;
 	let _: Result<(), redis::RedisError> = redis.del(username_cache_key).await;
@@ -160,12 +160,9 @@ async fn mark_object_for_deletion(config: &Config, cdn_base_url: &str, url: &str
 		return;
 	};
 
-	let bucket = match std::env::var("UPLOADS_BUCKET_NAME") {
-		Ok(bucket) => bucket,
-		Err(_) => {
-			warn!("UPLOADS_BUCKET_NAME environment variable not set; skipping S3 tagging");
-			return;
-		},
+	let Ok(bucket) = std::env::var("UPLOADS_BUCKET_NAME") else {
+		warn!("UPLOADS_BUCKET_NAME environment variable not set; skipping S3 tagging");
+		return;
 	};
 
 	let tag = match Tag::builder()
@@ -180,14 +177,20 @@ async fn mark_object_for_deletion(config: &Config, cdn_base_url: &str, url: &str
 		},
 	};
 
-	let tag = Tagging::builder().set_tag_set(Some(vec![tag])).build();
+	let tagging = match Tagging::builder().set_tag_set(Some(vec![tag])).build() {
+		Ok(tagging) => tagging,
+		Err(err) => {
+			warn!(error = %err, "Failed to construct tagging payload");
+			return;
+		},
+	};
 
 	if let Err(err) = config
 		.s3_client()
 		.put_object_tagging()
 		.bucket(&bucket)
 		.key(&object_key)
-		.tagging(tag.unwrap())
+		.tagging(tagging)
 		.send()
 		.await
 	{

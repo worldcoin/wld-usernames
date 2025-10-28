@@ -34,7 +34,7 @@ use crate::attestation::{attestation_middleware, JwksCache};
 pub fn handler() -> ApiRouter {
 	let cors = CorsLayer::new()
 	.allow_origin(Any) // Or you can specify allowed origins
-	.allow_methods(vec![Method::GET, Method::POST, Method::OPTIONS]) // Allow OPTIONS method
+	.allow_methods(vec![Method::GET, Method::POST, Method::OPTIONS, Method::DELETE]) // Allow OPTIONS method
 	.allow_headers(Any); // Allow any headers
 
 	ApiRouter::new()
