@@ -179,14 +179,14 @@ async fn mark_object_for_deletion(config: &Config, cdn_base_url: &str, url: &str
 		},
 	};
 
-	let tagging = Tagging::builder().set_tag_set(Some(vec![tag])).build();
+	let tag = Tagging::builder().set_tag_set(Some(vec![tag])).build();
 
 	if let Err(err) = config
 		.s3_client()
 		.put_object_tagging()
 		.bucket(&bucket)
 		.key(&object_key)
-		.tagging(tagging)
+		.tagging(tag.unwrap())
 		.send()
 		.await
 	{
@@ -236,4 +236,58 @@ pub fn docs(op: TransformOperation) -> TransformOperation {
 	op.description(
 		"Delete a user-uploaded profile picture and revert it to the default marble image.",
 	)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::object_key_from_cdn_url;
+
+	#[test]
+	fn derives_relative_path_when_base_has_no_path() {
+		let base = "https://cdn.example.com";
+		let full = "https://cdn.example.com/foo/bar.png";
+
+		assert_eq!(
+			object_key_from_cdn_url(base, full),
+			Some("foo/bar.png".to_string())
+		);
+	}
+
+	#[test]
+	fn handles_marble() {
+		let base = "https://static.usernames.app-backend.toolsforhumanity.com";
+		let full = "https://static.usernames.app-backend.toolsforhumanity.com/0x377da9cab87c04a1d6f19d8b4be9aef8df26fcdd.png";
+
+		assert_eq!(
+			object_key_from_cdn_url(base, full),
+			Some("0x377da9cab87c04a1d6f19d8b4be9aef8df26fcdd.png".to_string())
+		);
+	}
+
+	#[test]
+	fn handles_profile_picture() {
+		let base = "https://assets.usernames.worldcoin.org";
+		let full = "https://assets.usernames.worldcoin.org/0x6c5fac447d4d49ec91c24563209184c9a0b1f9da/profile";
+
+		assert_eq!(
+			object_key_from_cdn_url(base, full),
+			Some("0x6c5fac447d4d49ec91c24563209184c9a0b1f9da/profile".to_string())
+		);
+	}
+
+	#[test]
+	fn rejects_different_hosts() {
+		let base = "https://cdn.example.com";
+		let full = "https://evil.example.com/foo.png";
+
+		assert_eq!(object_key_from_cdn_url(base, full), None);
+	}
+
+	#[test]
+	fn rejects_non_matching_paths() {
+		let base = "https://cdn.example.com/base";
+		let full = "https://cdn.example.com/other/foo.png";
+
+		assert_eq!(object_key_from_cdn_url(base, full), None);
+	}
 }

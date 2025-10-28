@@ -64,11 +64,11 @@ pub fn handler() -> ApiRouter {
 		)
 		.api_route(
 			"/search/:username",
-			get_with(search, search_docs).layer(cors),
+			get_with(search, search_docs).layer(cors.clone()),
 		)
 		.api_route(
 			"/profile-picture",
-			delete_with(delete_profile_picture, delete_profile_picture_docs).layer(cors),
+			delete_with(delete_profile_picture, delete_profile_picture_docs).layer(cors.clone()),
 		)
 		.route(
 			"/profile-picture",
