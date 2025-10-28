@@ -192,7 +192,11 @@ impl ProfilePictureUploadHandler {
 		let bucket_name = std::env::var("UPLOADS_BUCKET_NAME")
 			.map_err(|_| ErrorResponse::server_error("Configuration error".to_string()))?;
 
-		let object_key = format!("profile_pictures/{}", uuid::Uuid::new_v4().to_string());
+		let object_key = format!(
+			"{}/profile_pictures/{}",
+			self.payload.address().to_lowercase(),
+			uuid::Uuid::new_v4()
+		);
 
 		s3_client
 			.put_object()
