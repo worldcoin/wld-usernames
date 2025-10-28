@@ -19,6 +19,8 @@ use crate::{
 	verify,
 };
 
+use super::validate_address;
+
 const FIELD_METADATA: &str = "metadata";
 const FIELD_PROFILE_PICTURE: &str = "profile_picture";
 
@@ -121,6 +123,7 @@ impl ProfilePictureUploadHandler {
 			self.payload.address(),
 			self.config.developer_portal_url.clone(),
 		)
+		.instrument(info_span!("verify_world_id_proof"))
 		.await
 		{
 			let response = match err {
@@ -139,10 +142,11 @@ impl ProfilePictureUploadHandler {
 
 	async fn verify_username_exists(&self) -> Result<String, ErrorResponse> {
 		let username = sqlx::query_scalar!(
-			"SELECT username FROM names WHERE LOWER(address) = LOWER($1)",
-			self.payload.address()
+			"SELECT username FROM names WHERE address = $1",
+			validate_address(self.payload.address())
 		)
 		.fetch_optional(&self.db.read_only)
+		.instrument(info_span!("verify_username_exists_db"))
 		.await?;
 
 		username.ok_or_else(|| {
@@ -222,9 +226,9 @@ impl ProfilePictureUploadHandler {
 		sqlx::query!(
 			"UPDATE names
 			 SET profile_picture_url = $1, updated_at = CURRENT_TIMESTAMP
-			 WHERE LOWER(address) = LOWER($2)",
+			 WHERE address = $2",
 			profile_picture_url,
-			self.payload.address()
+			validate_address(self.payload.address())
 		)
 		.execute(&self.db.read_write)
 		.instrument(info_span!("update_profile_picture_db", address = %self.payload.address()))
@@ -234,8 +238,6 @@ impl ProfilePictureUploadHandler {
 	}
 
 	async fn invalidate_cache(&mut self, username: &str) -> Result<(), ErrorResponse> {
-		use super::validate_address;
-
 		let address_cache_key =
 			format!("query_single:{}", validate_address(self.payload.address()));
 		let username_cache_key = format!("query_single:{username}");
