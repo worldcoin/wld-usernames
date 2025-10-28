@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE names SET profile_picture_url = $1, minimized_profile_picture_url = $2 WHERE address = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5d4f39ac6a135e6126a147b63c8229893288bc8661d96840701dc98a0d22911d"
+}
