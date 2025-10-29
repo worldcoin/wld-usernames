@@ -19,13 +19,11 @@ pub async fn delete_profile_picture(
 	Extension(mut redis): Extension<ConnectionManager>,
 	Query(payload): Query<DeleteProfilePicturePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
-	let address_checksum = payload.address.to_checksum(None);
-
 	match verify::dev_portal_verify_proof(
 		payload.into_proof(),
 		config.wld_app_id.to_string(),
 		"username",
-		address_checksum.clone(),
+		payload.address.clone(),
 		config.developer_portal_url.clone(),
 	)
 	.await
@@ -50,6 +48,7 @@ pub async fn delete_profile_picture(
 			));
 		},
 	}
+	let address_checksum = payload.address.to_checksum(None);
 
 	let query_address = address_checksum.clone();
 
