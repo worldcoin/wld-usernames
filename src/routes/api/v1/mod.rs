@@ -29,7 +29,10 @@ use search::{docs as search_docs, search};
 use tower_http::cors::{Any, CorsLayer};
 use update_record::{docs as update_record_docs, update_record};
 
-use crate::attestation::{attestation_middleware, JwksCache};
+use crate::{
+	attestation::{attestation_middleware, JwksCache},
+	config::ConfigExt,
+};
 
 pub fn handler() -> ApiRouter {
 	let cors = CorsLayer::new()
@@ -73,8 +76,12 @@ pub fn handler() -> ApiRouter {
 		.route(
 			"/profile-picture",
 			axum_post(upload_profile_picture).route_layer(middleware::from_fn(
-				|Extension(jwks_cache): Extension<Arc<JwksCache>>, headers, request, next| async move {
-					attestation_middleware(jwks_cache, headers, request, next).await
+				|Extension(config): ConfigExt,
+				 Extension(jwks_cache): Extension<Arc<JwksCache>>,
+				 headers,
+				 request,
+				 next| async move {
+					attestation_middleware(config, jwks_cache, headers, request, next).await
 				},
 			)),
 		)
