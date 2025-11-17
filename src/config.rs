@@ -110,7 +110,7 @@ pub enum Error {
 impl Config {
 	pub async fn from_env() -> Result<Self, Error> {
 		let environment: Environment = env::var("APP_ENV")
-			.unwrap_or_else(|_| "development".into())
+			.context("APP_ENV environment variable not set")?
 			.parse()?;
 
 		let blocklist = Blocklist::new(

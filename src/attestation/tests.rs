@@ -105,10 +105,6 @@ fn create_test_config(env: Environment) -> Arc<Config> {
 
 #[tokio::test]
 async fn test_attestation_middleware_happy_path() {
-	tracing_subscriber::fmt()
-		.with_max_level(tracing::Level::DEBUG)
-		.try_init()
-		.ok();
 	// Setup - use unique kid to avoid Redis cache conflicts
 	let kid = format!("test-key-{}", uuid::Uuid::new_v4());
 	let metadata = r#"{"test": "data", "foo": "bar"}"#;
