@@ -33,6 +33,12 @@ pub enum AttestationError {
 
 	#[error("Failed to hash request: {0}")]
 	HashError(String),
+
+	#[error("Invalid request detected")]
+	InvalidRequest,
+
+	#[error("Cache error: {0}")]
+	CacheError(String),
 }
 
 impl IntoResponse for AttestationError {
@@ -42,7 +48,8 @@ impl IntoResponse for AttestationError {
 			Self::MissingToken
 			| Self::KeyNotFound(_)
 			| Self::SignatureVerificationFailed(_)
-			| Self::HashMismatch => StatusCode::UNAUTHORIZED,
+			| Self::HashMismatch
+			| Self::InvalidRequest => StatusCode::UNAUTHORIZED,
 
 			// 400 BAD_REQUEST - Client errors
 			Self::InvalidToken(_) | Self::MissingKid | Self::HashError(_) => {
@@ -50,7 +57,7 @@ impl IntoResponse for AttestationError {
 			},
 
 			// 500 INTERNAL_SERVER_ERROR - Server errors
-			Self::JwksFetchError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+			Self::JwksFetchError(_) | Self::CacheError(_) => StatusCode::INTERNAL_SERVER_ERROR,
 		};
 
 		let body = serde_json::json!({

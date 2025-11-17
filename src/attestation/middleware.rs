@@ -1,5 +1,6 @@
 use axum::{body::Body, extract::Request, http::HeaderMap, middleware::Next, response::Response};
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
+use redis::aio::ConnectionManager;
 use std::sync::Arc;
 
 use super::jwks_cache::JwksCache;
@@ -7,11 +8,14 @@ use super::request_hasher::hash_request;
 use super::types::{AttestationClaims, AttestationError};
 
 const ATTESTATION_TOKEN_HEADER: &str = "attestation-gateway-token";
+const REQUEST_HASH_CACHE_PREFIX: &str = "attestation:request-hash";
+const REQUEST_HASH_TTL_SECS: usize = 15 * 60;
 
 /// Attestation verification middleware for multipart form data requests
 /// Verifies JWT signature and compares JTI with SHA256(metadata_json)
 pub async fn attestation_middleware(
 	jwks_cache: Arc<JwksCache>,
+	mut redis: ConnectionManager,
 	headers: HeaderMap,
 	request: Request,
 	next: Next,
@@ -98,6 +102,33 @@ pub async fn attestation_middleware(
 	if token_data.claims.jti != request_hash {
 		tracing::warn!("JTI mismatch - token JTI does not match request hash");
 		return Err(AttestationError::HashMismatch);
+	}
+
+	// Step 7: Cache the request hash to prevent replay
+	let cache_key = format!("{REQUEST_HASH_CACHE_PREFIX}:{request_hash}");
+	let set_response: redis::RedisResult<Option<String>> = redis::cmd("SET")
+		.arg(&cache_key)
+		.arg("1")
+		.arg("NX")
+		.arg("EX")
+		.arg(REQUEST_HASH_TTL_SECS)
+		.query_async(&mut redis)
+		.await;
+
+	match set_response {
+		Ok(Some(_)) => {
+			tracing::debug!(cache_key = %cache_key, "Stored request hash in replay cache");
+		},
+		Ok(None) => {
+			tracing::warn!(cache_key = %cache_key, "Replay detected for request hash");
+			return Err(AttestationError::InvalidRequest);
+		},
+		Err(err) => {
+			tracing::warn!(cache_key = %cache_key, error = %err, "Failed to cache request hash");
+			return Err(AttestationError::CacheError(
+				"Failed to record request hash".to_string(),
+			));
+		},
 	}
 
 	tracing::info!("Attestation verification successful");

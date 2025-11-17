@@ -100,7 +100,8 @@ async fn create_test_redis() -> ConnectionManager {
 async fn test_attestation_middleware_happy_path() {
 	// Setup - use unique kid to avoid Redis cache conflicts
 	let kid = format!("test-key-{}", uuid::Uuid::new_v4());
-	let metadata = r#"{"test": "data", "foo": "bar"}"#;
+	let nonce = uuid::Uuid::new_v4();
+	let metadata = format!(r#"{{"test":"data","foo":"bar","nonce":"{}"}}"#, nonce);
 	let boundary = "----boundary123";
 
 	// Step 1: Start mock JWKS server
@@ -131,20 +132,27 @@ async fn test_attestation_middleware_happy_path() {
 	// Step 6: Initialize JwksCache with mock server URL
 	let redis = create_test_redis().await;
 	let jwks_url = format!("{}/.well-known/jwks.json", mock_server.uri());
-	let jwks_cache = Arc::new(JwksCache::new(jwks_url, Duration::from_secs(60), redis));
+	let jwks_cache = Arc::new(JwksCache::new(
+		jwks_url,
+		Duration::from_secs(60),
+		redis.clone(),
+	));
 
 	// Step 7: Create test router with middleware
 	let app = Router::new()
 		.route("/test", post(|| async { StatusCode::OK }))
 		.route_layer(axum::middleware::from_fn(
-			|Extension(cache): Extension<Arc<JwksCache>>, headers, request, next| async move {
-				attestation_middleware(cache, headers, request, next).await
-			},
+			|Extension(cache): Extension<Arc<JwksCache>>,
+			 Extension(redis): Extension<ConnectionManager>,
+			 headers,
+			 request,
+			 next| async move { attestation_middleware(cache, redis, headers, request, next).await },
 		))
-		.layer(Extension(jwks_cache.clone()));
+		.layer(Extension(jwks_cache.clone()))
+		.layer(Extension(redis.clone()));
 
 	// Step 8: Create multipart request body
-	let body_data = create_multipart_body(metadata, boundary);
+	let body_data = create_multipart_body(&metadata, boundary);
 
 	// Step 9: Make request through the router
 	let request = Request::builder()
@@ -172,7 +180,8 @@ async fn test_attestation_middleware_happy_path() {
 async fn test_attestation_middleware_invalid_jti() {
 	// Setup similar to happy path but with wrong JTI - use unique kid
 	let kid = format!("test-key-{}", uuid::Uuid::new_v4());
-	let metadata = r#"{"test": "data"}"#;
+	let nonce = uuid::Uuid::new_v4();
+	let metadata = format!(r#"{{"test":"data","nonce":"{}"}}"#, nonce);
 	let boundary = "----boundary123";
 
 	let mock_server = MockServer::start().await;
@@ -196,20 +205,27 @@ async fn test_attestation_middleware_invalid_jti() {
 	// Initialize JwksCache
 	let redis = create_test_redis().await;
 	let jwks_url = format!("{}/.well-known/jwks.json", mock_server.uri());
-	let jwks_cache = Arc::new(JwksCache::new(jwks_url, Duration::from_secs(60), redis));
+	let jwks_cache = Arc::new(JwksCache::new(
+		jwks_url,
+		Duration::from_secs(60),
+		redis.clone(),
+	));
 
 	// Create test router with middleware
 	let app = Router::new()
 		.route("/test", post(|| async { StatusCode::OK }))
 		.route_layer(axum::middleware::from_fn(
-			|Extension(cache): Extension<Arc<JwksCache>>, headers, request, next| async move {
-				attestation_middleware(cache, headers, request, next).await
-			},
+			|Extension(cache): Extension<Arc<JwksCache>>,
+			 Extension(redis): Extension<ConnectionManager>,
+			 headers,
+			 request,
+			 next| async move { attestation_middleware(cache, redis, headers, request, next).await },
 		))
-		.layer(Extension(jwks_cache.clone()));
+		.layer(Extension(jwks_cache.clone()))
+		.layer(Extension(redis.clone()));
 
 	// Create multipart request body
-	let body_data = create_multipart_body(metadata, boundary);
+	let body_data = create_multipart_body(&metadata, boundary);
 
 	let request = Request::builder()
 		.method(Method::POST)
@@ -229,5 +245,91 @@ async fn test_attestation_middleware_invalid_jti() {
 		response.status(),
 		StatusCode::UNAUTHORIZED,
 		"Should fail with unauthorized for hash mismatch"
+	);
+}
+
+#[tokio::test]
+async fn test_attestation_middleware_rejects_replay() {
+	let kid = format!("test-key-{}", uuid::Uuid::new_v4());
+	let nonce = uuid::Uuid::new_v4();
+	let metadata = format!(r#"{{"test":"replay","nonce":"{}"}}"#, nonce);
+	let boundary = "----boundary789";
+
+	let mock_server = MockServer::start().await;
+	let (signing_key, jwk) = generate_es256_keypair_and_jwk(&kid);
+
+	let mut hasher = Sha256::new();
+	hasher.update(metadata.as_bytes());
+	let jti = hex::encode(hasher.finalize());
+
+	let token = create_test_jwt(&signing_key, &kid, jti.clone());
+
+	let jwks_response = serde_json::json!({
+		"keys": [jwk]
+	});
+
+	Mock::given(method("GET"))
+		.and(path("/.well-known/jwks.json"))
+		.respond_with(ResponseTemplate::new(200).set_body_json(&jwks_response))
+		.mount(&mock_server)
+		.await;
+
+	let redis = create_test_redis().await;
+	let jwks_url = format!("{}/.well-known/jwks.json", mock_server.uri());
+	let jwks_cache = Arc::new(JwksCache::new(
+		jwks_url,
+		Duration::from_secs(60),
+		redis.clone(),
+	));
+
+	let app = Router::new()
+		.route("/test", post(|| async { StatusCode::OK }))
+		.route_layer(axum::middleware::from_fn(
+			|Extension(cache): Extension<Arc<JwksCache>>,
+			 Extension(redis): Extension<ConnectionManager>,
+			 headers,
+			 request,
+			 next| async move { attestation_middleware(cache, redis, headers, request, next).await },
+		))
+		.layer(Extension(jwks_cache.clone()))
+		.layer(Extension(redis.clone()));
+
+	let body_data = create_multipart_body(&metadata, boundary);
+
+	let request_builder = || {
+		Request::builder()
+			.method(Method::POST)
+			.uri("/test")
+			.header(
+				header::CONTENT_TYPE,
+				format!("multipart/form-data; boundary={}", boundary),
+			)
+			.header("attestation-gateway-token", &token)
+			.body(Body::from(body_data.clone()))
+			.unwrap()
+	};
+
+	let response_first = app
+		.clone()
+		.oneshot(request_builder())
+		.await
+		.expect("first request succeeds");
+
+	assert_eq!(
+		response_first.status(),
+		StatusCode::OK,
+		"First request should be accepted"
+	);
+
+	let response_second = app
+		.clone()
+		.oneshot(request_builder())
+		.await
+		.expect("second request returns response");
+
+	assert_eq!(
+		response_second.status(),
+		StatusCode::UNAUTHORIZED,
+		"Second request should be rejected as replay"
 	);
 }
