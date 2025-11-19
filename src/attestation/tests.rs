@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::{Config, Environment};
 use axum::body::Body;
 use axum::extract::Request;
 use axum::http::{header, Method, StatusCode};
@@ -55,6 +56,7 @@ fn create_test_jwt(signing_key: &SigningKey, kid: &str, jti: String) -> String {
 	let claims = serde_json::json!({
 		"jti": jti,
 		"iat": now,
+		"iss": "attestation.worldcoin.org",
 		"exp": now + 3600, // 1 hour from now
 	});
 
@@ -96,6 +98,11 @@ async fn create_test_redis() -> ConnectionManager {
 	ConnectionManager::new(client).await.unwrap()
 }
 
+/// Create a minimal test config without database dependencies
+fn create_test_config(env: Environment) -> Arc<Config> {
+	Arc::new(Config::test_config(env))
+}
+
 #[tokio::test]
 async fn test_attestation_middleware_happy_path() {
 	// Setup - use unique kid to avoid Redis cache conflicts
@@ -134,13 +141,19 @@ async fn test_attestation_middleware_happy_path() {
 	let jwks_cache = Arc::new(JwksCache::new(jwks_url, Duration::from_secs(60), redis));
 
 	// Step 7: Create test router with middleware
+	// Create config for testing (production mode to enforce attestation)
+	let config = create_test_config(Environment::Production);
+
 	let app = Router::new()
 		.route("/test", post(|| async { StatusCode::OK }))
 		.route_layer(axum::middleware::from_fn(
-			|Extension(cache): Extension<Arc<JwksCache>>, headers, request, next| async move {
-				attestation_middleware(cache, headers, request, next).await
-			},
+			|Extension(cfg): Extension<Arc<Config>>,
+			 Extension(cache): Extension<Arc<JwksCache>>,
+			 headers,
+			 request,
+			 next| async move { attestation_middleware(cfg, cache, headers, request, next).await },
 		))
+		.layer(Extension(config.clone()))
 		.layer(Extension(jwks_cache.clone()));
 
 	// Step 8: Create multipart request body
@@ -198,14 +211,20 @@ async fn test_attestation_middleware_invalid_jti() {
 	let jwks_url = format!("{}/.well-known/jwks.json", mock_server.uri());
 	let jwks_cache = Arc::new(JwksCache::new(jwks_url, Duration::from_secs(60), redis));
 
+	// Create config for testing (production mode to enforce attestation)
+	let config = create_test_config(Environment::Production);
+
 	// Create test router with middleware
 	let app = Router::new()
 		.route("/test", post(|| async { StatusCode::OK }))
 		.route_layer(axum::middleware::from_fn(
-			|Extension(cache): Extension<Arc<JwksCache>>, headers, request, next| async move {
-				attestation_middleware(cache, headers, request, next).await
-			},
+			|Extension(cfg): Extension<Arc<Config>>,
+			 Extension(cache): Extension<Arc<JwksCache>>,
+			 headers,
+			 request,
+			 next| async move { attestation_middleware(cfg, cache, headers, request, next).await },
 		))
+		.layer(Extension(config.clone()))
 		.layer(Extension(jwks_cache.clone()));
 
 	// Create multipart request body
@@ -229,5 +248,97 @@ async fn test_attestation_middleware_invalid_jti() {
 		response.status(),
 		StatusCode::UNAUTHORIZED,
 		"Should fail with unauthorized for hash mismatch"
+	);
+}
+
+#[tokio::test]
+async fn test_skip_attestation_header_in_dev_mode() {
+	// Setup config with development environment
+	let config = create_test_config(Environment::Development);
+
+	// Create a minimal JwksCache (won't be used when skipping)
+	let redis = create_test_redis().await;
+	let jwks_cache = Arc::new(JwksCache::new(
+		"http://unused.example.com".to_string(),
+		Duration::from_secs(60),
+		redis,
+	));
+
+	// Create test router with middleware
+	let app = Router::new()
+		.route("/test", post(|| async { StatusCode::OK }))
+		.route_layer(axum::middleware::from_fn(
+			|Extension(cfg): Extension<Arc<Config>>,
+			 Extension(cache): Extension<Arc<JwksCache>>,
+			 headers,
+			 request,
+			 next| async move { attestation_middleware(cfg, cache, headers, request, next).await },
+		))
+		.layer(Extension(config.clone()))
+		.layer(Extension(jwks_cache.clone()));
+
+	// Create request WITHOUT attestation token but WITH skip header
+	let request = Request::builder()
+		.method(Method::POST)
+		.uri("/test")
+		.header(header::CONTENT_TYPE, "multipart/form-data; boundary=test")
+		.header("x-e2e-skip-attestation", "true")
+		.body(Body::from(
+			"--test\r\nContent-Disposition: form-data; name=\"test\"\r\n\r\ndata\r\n--test--\r\n",
+		))
+		.unwrap();
+
+	let response = app.oneshot(request).await.unwrap();
+
+	// Should succeed without attestation verification
+	assert_eq!(
+		response.status(),
+		StatusCode::OK,
+		"Should skip attestation in dev mode with skip header"
+	);
+}
+
+#[tokio::test]
+async fn test_skip_attestation_blocked_in_production() {
+	// Setup config with production environment
+	let config = create_test_config(Environment::Production);
+
+	let redis = create_test_redis().await;
+	let jwks_cache = Arc::new(JwksCache::new(
+		"http://unused.example.com".to_string(),
+		Duration::from_secs(60),
+		redis,
+	));
+
+	let app = Router::new()
+		.route("/test", post(|| async { StatusCode::OK }))
+		.route_layer(axum::middleware::from_fn(
+			|Extension(cfg): Extension<Arc<Config>>,
+			 Extension(cache): Extension<Arc<JwksCache>>,
+			 headers,
+			 request,
+			 next| async move { attestation_middleware(cfg, cache, headers, request, next).await },
+		))
+		.layer(Extension(config.clone()))
+		.layer(Extension(jwks_cache.clone()));
+
+	// Try to skip attestation in production (should fail)
+	let request = Request::builder()
+		.method(Method::POST)
+		.uri("/test")
+		.header(header::CONTENT_TYPE, "multipart/form-data; boundary=test")
+		.header("x-e2e-skip-attestation", "true")
+		.body(Body::from(
+			"--test\r\nContent-Disposition: form-data; name=\"test\"\r\n\r\ndata\r\n--test--\r\n",
+		))
+		.unwrap();
+
+	let response = app.oneshot(request).await.unwrap();
+
+	// Should fail because attestation token is missing (skip not allowed in prod)
+	assert_eq!(
+		response.status(),
+		StatusCode::UNAUTHORIZED,
+		"Should not skip attestation in production even with skip header"
 	);
 }

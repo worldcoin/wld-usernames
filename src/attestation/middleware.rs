@@ -2,20 +2,32 @@ use axum::{body::Body, extract::Request, http::HeaderMap, middleware::Next, resp
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use std::sync::Arc;
 
+use crate::config::Config;
+
 use super::jwks_cache::JwksCache;
 use super::request_hasher::hash_request;
 use super::types::{AttestationClaims, AttestationError};
 
 const ATTESTATION_TOKEN_HEADER: &str = "attestation-gateway-token";
+const SKIP_ATTESTATION_HEADER: &str = "x-e2e-skip-attestation";
 
 /// Attestation verification middleware for multipart form data requests
 /// Verifies JWT signature and compares JTI with SHA256(metadata_json)
 pub async fn attestation_middleware(
+	config: Arc<Config>,
 	jwks_cache: Arc<JwksCache>,
 	headers: HeaderMap,
 	request: Request,
 	next: Next,
 ) -> Result<Response, AttestationError> {
+	let skip_attestation = headers
+		.get(SKIP_ATTESTATION_HEADER)
+		.and_then(|v| v.to_str().ok());
+	if config.allowed_to_skip_attestation() && skip_attestation.is_some_and(|v| v == "true") {
+		tracing::info!("Skipping attestation verification in development environment");
+		return Ok(next.run(request).await);
+	}
+
 	// Extract attestation token from header
 	let token = headers
 		.get(ATTESTATION_TOKEN_HEADER)

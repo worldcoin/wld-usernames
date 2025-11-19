@@ -1,4 +1,4 @@
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client as S3Client;
 use axum::Extension;
@@ -11,6 +11,7 @@ use std::{
 	env::{self, VarError},
 	fmt::{self, Debug, Formatter},
 	num::ParseIntError,
+	str::FromStr,
 	sync::{Arc, LazyLock},
 	time::Duration,
 };
@@ -49,6 +50,26 @@ impl From<ConnectionManager> for ConnectionManagerDebug {
 	}
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Environment {
+	Production,
+	Staging,
+	Development,
+}
+
+impl FromStr for Environment {
+	type Err = anyhow::Error;
+
+	fn from_str(s: &str) -> anyhow::Result<Self> {
+		match s.trim().to_lowercase().as_str() {
+			"production" => Ok(Self::Production),
+			"staging" => Ok(Self::Staging),
+			"development" => Ok(Self::Development),
+			other => Err(anyhow!("Invalid environment: {}", other)),
+		}
+	}
+}
+
 #[derive(Debug)]
 pub struct Config {
 	pub wld_app_id: AppId,
@@ -57,6 +78,7 @@ pub struct Config {
 	pub developer_portal_url: String,
 	pub attestation_jwks_url: String,
 	pub whitelisted_avatar_domains: Option<Vec<String>>,
+	pub environment: Environment,
 	db_client: Option<PgPool>,
 	db_read_client: Option<PgPool>,
 	redis_pool: Option<ConnectionManagerDebug>,
@@ -87,6 +109,10 @@ pub enum Error {
 
 impl Config {
 	pub async fn from_env() -> Result<Self, Error> {
+		let environment: Environment = env::var("APP_ENV")
+			.context("APP_ENV environment variable not set")?
+			.parse()?;
+
 		let blocklist = Blocklist::new(
 			&env::var("RESERVED_USERNAMES")
 				.context("RESERVED_USERNAMES environment variable not set")?,
@@ -147,6 +173,7 @@ impl Config {
 		}
 
 		Ok(Self {
+			environment,
 			db_client: Some(db_client),
 			db_read_client: Some(db_read_client),
 			blocklist: Some(blocklist),
@@ -209,6 +236,35 @@ impl Config {
 
 	pub fn s3_client(&self) -> S3Client {
 		self.s3_client.clone()
+	}
+
+	pub fn allowed_to_skip_attestation(&self) -> bool {
+		self.environment == Environment::Development || self.environment == Environment::Staging
+	}
+
+	#[cfg(test)]
+	pub fn test_config(env: Environment) -> Self {
+		use idkit::session::AppId;
+
+		Self {
+			environment: env,
+			wld_app_id: unsafe { AppId::new_unchecked("app_test_app_id".to_string()) },
+			ens_domain: "test.eth".to_string(),
+			private_key: "test_private_key".to_string(),
+			developer_portal_url: "http://test.com".to_string(),
+			attestation_jwks_url: "http://test.com/jwks".to_string(),
+			whitelisted_avatar_domains: None,
+			db_client: None,
+			db_read_client: None,
+			redis_pool: None,
+			s3_client: aws_sdk_s3::Client::from_conf(
+				aws_sdk_s3::Config::builder()
+					.behavior_version_latest()
+					.region(aws_sdk_s3::config::Region::new("us-east-1"))
+					.build(),
+			),
+			blocklist: None,
+		}
 	}
 }
 
