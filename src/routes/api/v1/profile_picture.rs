@@ -3,13 +3,12 @@ use axum::{body::Bytes, extract::Multipart, Extension};
 use axum_jsonschema::Json;
 use idkit::session::VerificationLevel;
 use idkit::Proof;
+use image::{imageops::FilterType, io::Reader as ImageReader, ImageOutputFormat};
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::{collections::HashMap, io::Cursor, sync::Arc};
 use tracing::{info, info_span, warn, Instrument};
-
-use std::sync::Arc;
 
 use crate::{
 	config::{Config, ConfigExt, Db},
@@ -23,6 +22,7 @@ use super::validate_address;
 
 const FIELD_METADATA: &str = "metadata";
 const FIELD_PROFILE_PICTURE: &str = "profile_picture";
+const MINIMIZED_MAX_DIMENSION: u32 = 128;
 
 const fn detect_image_type(bytes: &[u8]) -> Result<&'static str, ()> {
 	if bytes.len() < 12 {
@@ -185,18 +185,61 @@ impl ProfilePictureUploadHandler {
 
 		Ok(())
 	}
+	// Downsize the profile picture to a small thumbnail for minimized displays.
+	fn create_minimized_image(&self) -> Result<(Vec<u8>, &'static str), ErrorResponse> {
+		let reader = ImageReader::new(Cursor::new(self.payload.image_bytes()))
+			.with_guessed_format()
+			.map_err(|err| {
+				warn!(error = %err, "failed to detect image format for minimization");
+				ErrorResponse::validation_error("Invalid image data".to_string())
+			})?;
 
-	async fn upload_to_s3(&self) -> Result<String, ErrorResponse> {
+		let image = reader.decode().map_err(|err| {
+			warn!(error = %err, "failed to decode image for minimization");
+			ErrorResponse::validation_error("Invalid image data".to_string())
+		})?;
+
+		let (width, height) = image.dimensions();
+		let resized = if width > MINIMIZED_MAX_DIMENSION || height > MINIMIZED_MAX_DIMENSION {
+			image.resize(
+				MINIMIZED_MAX_DIMENSION,
+				MINIMIZED_MAX_DIMENSION,
+				FilterType::CatmullRom,
+			)
+		} else {
+			image
+		};
+
+		let (output_format, content_type) = match detect_image_type(self.payload.image_bytes()) {
+			Ok("image/jpeg") => (ImageOutputFormat::Jpeg(80), "image/jpeg"),
+			Ok("image/webp") => (ImageOutputFormat::WebP, "image/webp"),
+			_ => (ImageOutputFormat::Png, "image/png"),
+		};
+
+		let mut buffer = Vec::new();
+		resized
+			.write_to(&mut Cursor::new(&mut buffer), output_format)
+			.map_err(|err| {
+				warn!(error = %err, "failed to encode minimized profile picture");
+				ErrorResponse::server_error("Failed to process profile picture".to_string())
+			})?;
+
+		Ok((buffer, content_type))
+	}
+
+	async fn upload_to_s3(&self) -> Result<(String, String), ErrorResponse> {
 		let s3_client = self.config.s3_client();
 
 		let bucket_name = std::env::var("UPLOADS_BUCKET_NAME")
 			.map_err(|_| ErrorResponse::server_error("Configuration error".to_string()))?;
 
-		let object_key = format!(
-			"{}/profile_pictures/{}",
-			self.payload.address().to_lowercase(),
-			uuid::Uuid::new_v4()
-		);
+		// DO NOT CHANGE THIS PATH STRUCTURE
+		// We use this to show the user name and bubble
+		let upload_id = uuid::Uuid::new_v4();
+		let address_path = self.payload.address().to_lowercase();
+		let object_key = format!("{}/profile_pictures/{upload_id}", address_path);
+		let minimized_object_key =
+			format!("{}/profile_pictures/minimized_{upload_id}", address_path);
 
 		s3_client
 			.put_object()
@@ -215,36 +258,67 @@ impl ProfilePictureUploadHandler {
 				ErrorResponse::server_error("Failed to upload profile picture".to_string())
 			})?;
 
-		Ok(object_key)
+		let (minimized_bytes, minimized_content_type) = self.create_minimized_image()?;
+
+		s3_client
+			.put_object()
+			.bucket(&bucket_name)
+			.key(&minimized_object_key)
+			.body(ByteStream::from(minimized_bytes))
+			.content_type(minimized_content_type)
+			.send()
+			.instrument(info_span!(
+				"s3.upload_minimized_profile_picture",
+				address = %self.payload.address()
+			))
+			.await
+			.map_err(|err| {
+				warn!(error = %err, address = %self.payload.address(), "failed to upload minimized profile picture to S3");
+				ErrorResponse::server_error("Failed to upload profile picture".to_string())
+			})?;
+
+		Ok((object_key, minimized_object_key))
 	}
 
-	async fn update_profile_picture_url(&self, object_key: &str) -> Result<String, ErrorResponse> {
+	async fn update_profile_picture_urls(
+		&self,
+		object_key: &str,
+		minimized_object_key: &str,
+	) -> Result<(String, String), ErrorResponse> {
 		// Construct the CDN URL
 		let cdn_base_url = std::env::var("PROFILE_PICTURE_CDN_URL").map_err(|_| {
 			warn!("PROFILE_PICTURE_CDN_URL environment variable not set");
 			ErrorResponse::server_error("Configuration error".to_string())
 		})?;
 		let profile_picture_url = format!("{}/{}", cdn_base_url.trim_end_matches('/'), object_key);
+		let minimized_profile_picture_url = format!(
+			"{}/{}",
+			cdn_base_url.trim_end_matches('/'),
+			minimized_object_key
+		);
 
 		// Update database with the profile picture URL
 		sqlx::query!(
 			"UPDATE names
-			 SET profile_picture_url = $1, updated_at = CURRENT_TIMESTAMP
-			 WHERE address = $2",
+			 SET profile_picture_url = $1, minimized_profile_picture_url = $2, updated_at = CURRENT_TIMESTAMP
+			 WHERE address = $3",
 			profile_picture_url,
+			minimized_profile_picture_url,
 			validate_address(self.payload.address())
 		)
 		.execute(&self.db.read_write)
 		.instrument(info_span!("update_profile_picture_db", address = %self.payload.address()))
 		.await?;
 
-		Ok(profile_picture_url)
+		Ok((profile_picture_url, minimized_profile_picture_url))
 	}
 
 	async fn invalidate_cache(&mut self, username: &str) -> Result<(), ErrorResponse> {
 		let address_cache_key =
 			format!("query_single:{}", validate_address(self.payload.address()));
 		let username_cache_key = format!("query_single:{username}");
+		let avatar_original_cache_key = format!("avatar:{username}:original");
+		let avatar_minimized_cache_key = format!("avatar:{username}:minimized");
 
 		let _: Result<(), redis::RedisError> = self
 			.redis
@@ -255,6 +329,16 @@ impl ProfilePictureUploadHandler {
 			.redis
 			.del(&username_cache_key)
 			.instrument(info_span!("redis.delete_query_single_username"))
+			.await;
+		let _: Result<(), redis::RedisError> = self
+			.redis
+			.del(&avatar_original_cache_key)
+			.instrument(info_span!("redis.delete_avatar_original"))
+			.await;
+		let _: Result<(), redis::RedisError> = self
+			.redis
+			.del(&avatar_minimized_cache_key)
+			.instrument(info_span!("redis.delete_avatar_minimized"))
 			.await;
 
 		Ok(())
@@ -275,16 +359,24 @@ impl ProfilePictureUploadHandler {
 		self.verify_world_id().await?;
 		let username = self.verify_username_exists().await?;
 
-		let object_key = self.upload_to_s3().await?;
-		let profile_picture_url = self.update_profile_picture_url(&object_key).await?;
+		let (object_key, minimized_object_key) = self.upload_to_s3().await?;
+		let (profile_picture_url, minimized_profile_picture_url) = self
+			.update_profile_picture_urls(&object_key, &minimized_object_key)
+			.await?;
 
 		// Invalidate cache for both address and username lookups
 		self.invalidate_cache(&username).await?;
 
-		info!(url = %profile_picture_url,address = %self.payload.address(), "Profile picture uploaded and database updated successfully (v2)");
+		info!(
+			url = %profile_picture_url,
+			minimized_url = %minimized_profile_picture_url,
+			address = %self.payload.address(),
+			"Profile picture uploaded and database updated successfully (v2)"
+		);
 
 		Ok(ProfilePictureUploadResponse {
 			profile_picture_url,
+			minimized_profile_picture_url,
 		})
 	}
 }
