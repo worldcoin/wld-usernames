@@ -19,7 +19,7 @@ jobs:
       PORT: 8000
       ENS_DOMAIN: example.eth
       WLD_APP_ID: app_test_app_id
-      PRIVATE_KEY: 0x0123456789012345678901234567890123456789012345678901234567890123
+      PRIVATE_KEY: ""
       RESERVED_USERNAMES: admin,test
       BLOCKED_SUBSTRINGS: world,support,admin
       DATABASE_URL: postgres://postgres:password@localhost:5432/postgres
