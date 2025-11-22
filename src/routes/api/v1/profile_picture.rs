@@ -219,7 +219,12 @@ impl ProfilePictureUploadHandler {
 		let (output_format, content_type) = match detect_image_type(self.payload.image_bytes()) {
 			Ok("image/jpeg") => (ImageFormat::Jpeg, "image/jpeg"),
 			Ok("image/webp") => (ImageFormat::WebP, "image/webp"),
-			_ => (ImageFormat::Png, "image/png"),
+			Ok("image/png") => (ImageFormat::Png, "image/png"),
+			Ok(_) | Err(()) => {
+				return Err(ErrorResponse::validation_error(
+					"Unsupported image format. Only JPEG, PNG, and WebP are supported.".to_string(),
+				));
+			}
 		};
 
 		let mut buffer = Cursor::new(Vec::new());
