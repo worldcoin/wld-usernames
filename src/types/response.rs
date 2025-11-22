@@ -29,6 +29,8 @@ pub struct UsernameRecord {
 pub struct ProfilePictureUploadResponse {
 	/// URL to the uploaded profile picture.
 	pub profile_picture_url: String,
+	/// URL to the minimized version of the uploaded profile picture.
+	pub minimized_profile_picture_url: String,
 }
 
 #[allow(clippy::fallible_impl_from)]
