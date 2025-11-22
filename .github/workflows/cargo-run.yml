@@ -1,0 +1,104 @@
+name: Cargo Run
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-run:
+    name: Cargo Run Smoke Test
+    runs-on: ubuntu-latest
+
+    env:
+      APP_ENV: development
+      PORT: 8000
+      ENS_DOMAIN: example.eth
+      WLD_APP_ID: app_test_app_id
+      PRIVATE_KEY: 0x0123456789012345678901234567890123456789012345678901234567890123
+      RESERVED_USERNAMES: admin,test
+      BLOCKED_SUBSTRINGS: world,support,admin
+      DATABASE_URL: postgres://postgres:password@localhost:5432/postgres
+      DATABASE_READ_URL: postgres://postgres:password@localhost:5432/postgres
+      DEVELOPER_PORTAL_ENDPOINT: https://example.com
+      REDIS_URL: redis://127.0.0.1:6379
+      ATTESTATION_JWKS_URL: https://example.com/.well-known/jwks.json
+      OPENSEARCH_ENDPOINT: http://localhost:9200
+      OPENSEARCH_INDEX_NAME: names
+      SQLX_OFFLINE: "true"
+      AWS_EC2_METADATA_DISABLED: "true"
+      RUST_LOG: info
+
+    services:
+      postgres:
+        image: postgres:16
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.86
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Smoke test cargo run
+        run: |
+          set -euo pipefail
+
+          cargo run --locked --bin wld-usernames > server.log 2>&1 &
+          SERVER_PID=$!
+
+          READY=0
+          for _ in $(seq 1 300); do
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              echo "Server process exited early"
+              cat server.log
+              exit 1
+            fi
+
+            if curl -sSf http://localhost:8000/health > /dev/null; then
+              READY=1
+              break
+            fi
+
+            sleep 1
+          done
+
+          if [ "$READY" -ne 1 ]; then
+            echo "Server did not become healthy in time"
+            cat server.log
+            kill "$SERVER_PID" || true
+            wait "$SERVER_PID" || true
+            exit 1
+          fi
+
+          echo "Health endpoint reachable, shutting down..."
+          kill "$SERVER_PID" || true
+          wait "$SERVER_PID" || true
