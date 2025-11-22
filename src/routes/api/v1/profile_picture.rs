@@ -3,7 +3,13 @@ use axum::{body::Bytes, extract::Multipart, Extension};
 use axum_jsonschema::Json;
 use idkit::session::VerificationLevel;
 use idkit::Proof;
-use image::{imageops::FilterType, io::Reader as ImageReader, ImageOutputFormat};
+use image::{
+	codecs::{jpeg::JpegEncoder, png::PngEncoder, webp::WebPEncoder},
+	imageops::FilterType,
+	GenericImageView,
+	ImageFormat,
+	ImageReader,
+};
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -211,20 +217,26 @@ impl ProfilePictureUploadHandler {
 		};
 
 		let (output_format, content_type) = match detect_image_type(self.payload.image_bytes()) {
-			Ok("image/jpeg") => (ImageOutputFormat::Jpeg(80), "image/jpeg"),
-			Ok("image/webp") => (ImageOutputFormat::WebP, "image/webp"),
-			_ => (ImageOutputFormat::Png, "image/png"),
+			Ok("image/jpeg") => (ImageFormat::Jpeg, "image/jpeg"),
+			Ok("image/webp") => (ImageFormat::WebP, "image/webp"),
+			_ => (ImageFormat::Png, "image/png"),
 		};
 
-		let mut buffer = Vec::new();
-		resized
-			.write_to(&mut Cursor::new(&mut buffer), output_format)
-			.map_err(|err| {
-				warn!(error = %err, "failed to encode minimized profile picture");
-				ErrorResponse::server_error("Failed to process profile picture".to_string())
-			})?;
+		let mut buffer = Cursor::new(Vec::new());
+		let encode_result = match output_format {
+			ImageFormat::Jpeg => {
+				resized.write_with_encoder(JpegEncoder::new_with_quality(&mut buffer, 80))
+			}
+			ImageFormat::WebP => resized.write_with_encoder(WebPEncoder::new_lossless(&mut buffer)),
+			_ => resized.write_with_encoder(PngEncoder::new(&mut buffer)),
+		};
 
-		Ok((buffer, content_type))
+		encode_result.map_err(|err| {
+			warn!(error = %err, "failed to encode minimized profile picture");
+			ErrorResponse::server_error("Failed to process profile picture".to_string())
+		})?;
+
+		Ok((buffer.into_inner(), content_type))
 	}
 
 	async fn upload_to_s3(&self) -> Result<(String, String), ErrorResponse> {
