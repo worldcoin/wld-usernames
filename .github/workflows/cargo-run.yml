@@ -32,6 +32,7 @@ jobs:
       SQLX_OFFLINE: "true"
       AWS_EC2_METADATA_DISABLED: "true"
       RUST_LOG: info
+      ENABLE_DATA_DELETION_WORKER: "false"
 
     services:
       postgres:
@@ -68,6 +69,18 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
+      - name: Wait for services
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            if nc -z 127.0.0.1 5432 && nc -z 127.0.0.1 6379; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Services not reachable in time"
+          exit 1
+
       - name: Smoke test cargo run
         run: |
           set -euo pipefail
@@ -83,7 +96,7 @@ jobs:
               exit 1
             fi
 
-            if curl -sSf http://localhost:8000/health > /dev/null; then
+            if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
               READY=1
               break
             fi
