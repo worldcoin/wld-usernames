@@ -88,15 +88,20 @@ pub async fn delete_profile_picture(
 		ErrorResponse::server_error("Configuration error".to_string())
 	})?;
 
+	let marble_base_url = std::env::var("MARBLE_CDN_URL").map_err(|_| {
+		warn!("MARBLE_CDN_URL environment variable not set");
+		ErrorResponse::server_error("Configuration error".to_string())
+	})?;
+
 	let marble_url = format!(
 		"{}/{}.png",
-		cdn_base_url.trim_end_matches('/'),
+		marble_base_url.trim_end_matches('/'),
 		address.to_lowercase()
 	);
 	// We use the existing schema for minimized and verified
 	let minimized_marble_url = format!(
 		"{}/minimized_{}.png",
-		cdn_base_url.trim_end_matches('/'),
+		marble_base_url.trim_end_matches('/'),
 		address.to_lowercase()
 	);
 
