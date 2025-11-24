@@ -6,6 +6,7 @@ use tracing::{info, info_span, warn, Instrument};
 use crate::{
 	config::{ConfigExt, Db},
 	deletion,
+	routes::api::v1::query_single::validate_address,
 	types::{DeleteProfilePicturePayload, ErrorResponse, Name},
 	verify,
 };
@@ -48,20 +49,16 @@ pub async fn delete_profile_picture(
 			));
 		},
 	}
-	let address_checksum = payload.address.to_checksum(None);
 
-	let query_address = address_checksum.clone();
+	let address_checksum = validate_address(&payload.address);
 
 	let Some(record) = sqlx::query_as!(
 		Name,
 		"SELECT * FROM names WHERE address = $1",
-		query_address.clone()
+		address_checksum.clone()
 	)
 	.fetch_optional(&db.read_only)
-	.instrument(info_span!(
-		"delete_profile_picture_fetch_record",
-		address = %address_checksum
-	))
+	.instrument(info_span!("delete_profile_picture_fetch_record"))
 	.await?
 	else {
 		return Err(ErrorResponse::not_found(

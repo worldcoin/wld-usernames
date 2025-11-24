@@ -123,7 +123,7 @@ pub struct DeleteProfilePicturePayload {
 	/// 0x-prefixed hex string of the World ID merkle root.
 	merkle_root: String,
 	/// The user's wallet address.
-	pub address: Address,
+	pub address: String,
 	/// 0x-prefixed hex string of the World ID nullifier hash.
 	pub nullifier_hash: String,
 	/// World ID verification level the user holds.
