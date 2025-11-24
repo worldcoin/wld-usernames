@@ -19,11 +19,13 @@ pub async fn delete_profile_picture(
 	Extension(mut redis): Extension<ConnectionManager>,
 	Query(payload): Query<DeleteProfilePicturePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
+	let address_lowercase = format!("{:#x}", payload.address.0);
+
 	match verify::dev_portal_verify_proof(
 		payload.into_proof(),
 		config.wld_app_id.to_string(),
 		"username",
-		payload.address.clone(),
+		address_lowercase.as_str(),
 		config.developer_portal_url.clone(),
 	)
 	.await
