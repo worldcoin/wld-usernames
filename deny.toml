@@ -1,0 +1,53 @@
+# cargo-deny configuration
+# Based on https://github.com/worldcoin/bedrock/blob/main/deny.toml
+
+[graph]
+# Check all features
+all-features = true
+
+[sources]
+# Deny crates from unknown registries
+unknown-registry = "deny"
+unknown-git = "deny"
+
+# Allowed git sources
+allow-git = [
+    "https://github.com/alloy-rs/alloy.git",
+]
+
+[bans]
+# Allow multiple versions of these crates - they're commonly duplicated in the ecosystem
+multiple-versions = "allow"
+deny = []
+
+[licenses]
+version = 2
+confidence-threshold = 1.0
+
+# List of allowed licenses
+allow = [
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "MPL-2.0",
+    "ISC",
+    "MIT",
+    "OpenSSL",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+# Specific exceptions for crates we can't avoid
+exceptions = [
+]
+
+
+# Ignore unmaintained required crates warning
+[advisories]
+ignore = [
+    "RUSTSEC-2024-0436", # Unmaintained `paste` (2025-04-04)
+]
+
