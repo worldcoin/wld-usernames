@@ -8,7 +8,8 @@ use super::jwks_cache::JwksCache;
 use super::request_hasher::hash_request;
 use super::types::{AttestationClaims, AttestationError};
 
-const ATTESTATION_TOKEN_HEADER: &str = "attestation-gateway-token";
+const ATTESTATION_GATEWAY_TOKEN_HEADER: &str = "attestation-gateway-token";
+const ATTESTATION_TOKEN_HEADER: &str = "attestation-token";
 const SKIP_ATTESTATION_HEADER: &str = "x-e2e-skip-attestation";
 
 /// Attestation verification middleware for multipart form data requests
@@ -28,9 +29,10 @@ pub async fn attestation_middleware(
 		return Ok(next.run(request).await);
 	}
 
-	// Extract attestation token from header
+	// Extract attestation token from header (try gateway token first, then fallback to regular token)
 	let token = headers
-		.get(ATTESTATION_TOKEN_HEADER)
+		.get(ATTESTATION_GATEWAY_TOKEN_HEADER)
+		.or_else(|| headers.get(ATTESTATION_TOKEN_HEADER))
 		.and_then(|v| v.to_str().ok())
 		.ok_or_else(|| {
 			tracing::warn!("Missing attestation token");
