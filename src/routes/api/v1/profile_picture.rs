@@ -6,9 +6,7 @@ use idkit::Proof;
 use image::{
 	codecs::{jpeg::JpegEncoder, png::PngEncoder, webp::WebPEncoder},
 	imageops::FilterType,
-	GenericImageView,
-	ImageFormat,
-	ImageReader,
+	GenericImageView, ImageFormat, ImageReader,
 };
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::Deserialize;
@@ -25,6 +23,12 @@ use crate::{
 };
 
 use super::validate_address;
+
+/*
+	Deprecated
+	This endpoint will no longer be used as the profile picture endpoint
+	We will move to a different flow.
+*/
 
 const FIELD_METADATA: &str = "metadata";
 const FIELD_PROFILE_PICTURE: &str = "profile_picture";
@@ -224,14 +228,14 @@ impl ProfilePictureUploadHandler {
 				return Err(ErrorResponse::validation_error(
 					"Unsupported image format. Only JPEG, PNG, and WebP are supported.".to_string(),
 				));
-			}
+			},
 		};
 
 		let mut buffer = Cursor::new(Vec::new());
 		let encode_result = match output_format {
 			ImageFormat::Jpeg => {
 				resized.write_with_encoder(JpegEncoder::new_with_quality(&mut buffer, 80))
-			}
+			},
 			ImageFormat::WebP => resized.write_with_encoder(WebPEncoder::new_lossless(&mut buffer)),
 			_ => resized.write_with_encoder(PngEncoder::new(&mut buffer)),
 		};

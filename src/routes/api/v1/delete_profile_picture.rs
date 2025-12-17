@@ -11,6 +11,12 @@ use crate::{
 	verify,
 };
 
+/*
+	Deprecated
+	This endpoint will no longer be used as the profile picture endpoint
+	We will move to a different flow.
+*/
+
 #[allow(dependency_on_unit_never_type_fallback)]
 /// This endpoint uses a proof for authentication
 /// Deletes a user-uploaded profile picture and reverts it to the default marble image.
