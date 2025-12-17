@@ -15,7 +15,8 @@ permissions:
 jobs:
   format:
     name: Format
-    runs-on: ubuntu-latest
+    runs-on:
+      group: arc-public-large-amd64-runner
     steps:
       - uses: actions/checkout@v4
 
@@ -29,7 +30,8 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on:
+      group: arc-public-large-amd64-runner
     steps:
       - uses: actions/checkout@v4
 
@@ -46,7 +48,8 @@ jobs:
 
   fast-build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on:
+      group: arc-public-large-amd64-runner
     steps:
       - uses: actions/checkout@v4
 
@@ -57,14 +60,15 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: SQLX_OFFLINE=true cargo build --verbose
+        run: 2
 
       - name: Build release
         run: SQLX_OFFLINE=true cargo build --release --verbose
 
   test:
     name: Tests
-    runs-on: ubuntu-latest
+    runs-on:
+      group: arc-public-large-amd64-runner
 
     steps:
       - name: Checkout code
@@ -88,7 +92,8 @@ jobs:
 
   deny:
     name: Cargo deny
-    runs-on: ubuntu-latest
+    runs-on:
+      group: arc-public-large-amd64-runner
     permissions:
       contents: read
     strategy:
@@ -110,7 +115,8 @@ jobs:
 
   build-and-health-check:
     name: Build and Health Check
-    runs-on: ubuntu-latest
+    runs-on:
+      group: arc-public-large-amd64-runner
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

@@ -2197,6 +2197,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.111",
+ "unicode-xid",
 ]
 
 [[package]]
@@ -7052,6 +7053,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "datadog-tracing",
+ "derive_more 1.0.0",
  "dotenvy",
  "futures",
  "hex",
