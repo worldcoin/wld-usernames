@@ -48,6 +48,7 @@ exceptions = [
 # Ignore unmaintained required crates warning
 [advisories]
 ignore = [
+    "RUSTSEC-2025-0134", # Unmaintained `rustls-pemfile` (2025-12-05)
     "RUSTSEC-2024-0436", # Unmaintained `paste` (2025-04-04)
 ]
 

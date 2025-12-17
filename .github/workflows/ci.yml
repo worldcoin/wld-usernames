@@ -60,7 +60,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: 2
+        run: SQLX_OFFLINE=true cargo build --verbose
 
       - name: Build release
         run: SQLX_OFFLINE=true cargo build --release --verbose
@@ -79,6 +79,9 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+
+      - name: Setup test environment
+        run: cp .env.test .env
 
       - name: Start LocalStack and wait for it to be healthy
         run: |
