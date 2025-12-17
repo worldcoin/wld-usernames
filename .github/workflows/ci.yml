@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Format
+    runs-on:
+      group: arc-public-large-amd64-runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  lint:
+    name: Lint
+    runs-on:
+      group: arc-public-large-amd64-runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features --
+
+  fast-build:
+    name: Build
+    runs-on:
+      group: arc-public-large-amd64-runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: SQLX_OFFLINE=true cargo build --verbose
+
+      - name: Build release
+        run: SQLX_OFFLINE=true cargo build --release --verbose
+
+  test:
+    name: Tests
+    runs-on:
+      group: arc-public-large-amd64-runner
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup test environment
+        run: cp .env.test .env
+
+      - name: Start LocalStack and wait for it to be healthy
+        run: |
+          docker compose up -d --wait
+
+      - name: Run tests
+        run: cargo test -- --nocapture
+
+      - name: Clean up
+        run: docker compose down
+
+  deny:
+    name: Cargo deny
+    runs-on:
+      group: arc-public-large-amd64-runner
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        checks:
+          - advisories
+          - bans licenses sources
+
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check ${{ matrix.checks }}
+          rust-version: stable
+
+  build-and-health-check:
+    name: Build and Health Check
+    runs-on:
+      group: arc-public-large-amd64-runner
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build server
+        run: SQLX_OFFLINE=true cargo build --release
+
+      - name: Start dependencies and wait for them to be healthy
+        run: |
+          docker compose up -d --wait
+
+      - name: Run server
+        run: |
+          set -a
+          source .env.test
+          set +a
+          ./target/release/wld-usernames &
+          sleep 5
+
+      - name: Health check
+        run: curl -f http://localhost:3000/health
+
+      - name: Clean up
+        run: docker compose down
