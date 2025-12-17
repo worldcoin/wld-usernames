@@ -1,69 +1,71 @@
 name: test
 
 on:
-    push:
-        branches: ['main']
-        paths: ['contracts/**', 'foundry.toml', 'soldeer.lock']
-    pull_request:
-        paths: ['contracts/**', 'foundry.toml', 'soldeer.lock']
+  push:
+    branches: ["main"]
+    paths: ["contracts/**", "foundry.toml", "soldeer.lock"]
+  pull_request:
+    paths: ["contracts/**", "foundry.toml", "soldeer.lock"]
 
 env:
-    FOUNDRY_PROFILE: ci
+  FOUNDRY_PROFILE: ci
 
 jobs:
-    test:
-        strategy:
-            fail-fast: true
+  test:
+    strategy:
+      fail-fast: true
 
-        name: Contract Tests
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v4
+    name: Contract Tests
+    runs-on:
+      group: arc-large-amd64-runner
+    steps:
+      - uses: actions/checkout@v4
 
-            - name: Install Foundry
-              uses: foundry-rs/foundry-toolchain@v1
-              with:
-                  version: nightly
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
 
-            - name: Run Forge build
-              run: |
-                  forge --version
-                  forge soldeer update
-                  forge build --sizes
+      - name: Run Forge build
+        run: |
+          forge --version
+          forge soldeer update
+          forge build --sizes
 
-            - name: Run Forge tests
-              run: |
-                  forge test -vvv
-    compare_gas_reports:
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v4
+      - name: Run Forge tests
+        run: |
+          forge test -vvv
+  compare_gas_reports:
+    runs-on:
+      group: arc-large-amd64-runner
+    steps:
+      - uses: actions/checkout@v4
 
-            - name: Install Foundry
-              uses: foundry-rs/foundry-toolchain@v1
-              with:
-                  version: nightly
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
 
-            - name: Install dependencies
-              run: forge soldeer update
+      - name: Install dependencies
+        run: forge soldeer update
 
-            - name: Run tests
-              run: forge test --gas-report > gasreport.ansi
-              env:
-                  FOUNDRY_FUZZ_SEED: 0x${{ github.event.pull_request.base.sha || github.sha }}
+      - name: Run tests
+        run: forge test --gas-report > gasreport.ansi
+        env:
+          FOUNDRY_FUZZ_SEED: 0x${{ github.event.pull_request.base.sha || github.sha }}
 
-            - name: Compare gas reports
-              uses: Rubilmax/foundry-gas-diff@v3.18
-              with:
-                  summaryQuantile: 0.9 # only display the 10% most significant gas diffs in the summary (defaults to 20%)
-                  sortCriteria: avg,max # sort diff rows by criteria
-                  sortOrders: desc,asc # and directions
-                  ignore: test-foundry/**/* # filter out gas reports from specific paths (test/ is included by default)
-              id: gas_diff
+      - name: Compare gas reports
+        uses: Rubilmax/foundry-gas-diff@v3.18
+        with:
+          summaryQuantile: 0.9 # only display the 10% most significant gas diffs in the summary (defaults to 20%)
+          sortCriteria: avg,max # sort diff rows by criteria
+          sortOrders: desc,asc # and directions
+          ignore: test-foundry/**/* # filter out gas reports from specific paths (test/ is included by default)
+        id: gas_diff
 
-            - name: Add gas diff to sticky comment
-              if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
-              uses: marocchino/sticky-pull-request-comment@v2
-              with:
-                  delete: ${{ !steps.gas_diff.outputs.markdown }}
-                  message: ${{ steps.gas_diff.outputs.markdown }}
+      - name: Add gas diff to sticky comment
+        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          delete: ${{ !steps.gas_diff.outputs.markdown }}
+          message: ${{ steps.gas_diff.outputs.markdown }}
