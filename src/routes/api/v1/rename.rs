@@ -134,19 +134,22 @@ pub async fn rename(
 		.await?;
 	}
 
-	let moved_address = sqlx::query_as!(
+	let Some(moved_address) = sqlx::query_as!(
 		MovedAddress,
 		"UPDATE names SET username = $1 WHERE username = $2 RETURNING address",
 		&payload.new_username,
 		&payload.old_username,
 	)
-	.fetch_one(&mut *tx)
+	.fetch_optional(&mut *tx)
 	.instrument(info_span!(
 		"rename_update_name",
 		old_username = payload.old_username,
 		new_username = payload.new_username
 	))
-	.await?;
+	.await?
+	else {
+		return Err(ErrorResponse::not_found("Username not found".to_string()));
+	};
 
 	sqlx::query!(
 		"INSERT INTO old_names (old_username, new_username) VALUES ($1, $2)",
