@@ -34,6 +34,20 @@ cargo sqlx prepare
 [Production Deployment](https://usernames.worldcoin.org/docs)
 [ENS Resolver](https://etherscan.io/address/0xB4E36A6C3403137d8fdaf4e91b91D1aBC2caF3Dd)
 
+## 🧪 Dev/E2E Endpoints
+
+The following endpoints are intended for local development and e2e tests
+only. They are gated by the same flag as `x-e2e-skip-attestation`: the
+service must run with `APP_ENV=development` or `APP_ENV=staging`, **and** the
+caller must send `x-e2e-skip-attestation: true`. In production they always
+respond with `403 Forbidden`.
+
+- `DELETE /api/v1/internal/usernames/:address` — deletes the username record
+  associated with a wallet address (idempotent). Wraps the same
+  `UsernameDeletionService` used by the deletion worker, so it cleans up
+  `names`, `old_names` and the related Redis cache entries. Returns
+  `204 No Content` on success.
+
 ### Rust required installations
 
 ```bash

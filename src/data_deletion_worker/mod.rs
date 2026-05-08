@@ -9,10 +9,14 @@ use redis::aio::ConnectionManager;
 use sqlx::postgres::PgPoolOptions;
 use std::{env, time::Duration};
 
+pub use username_deletion_service::{UsernameDeletionService, UsernameDeletionServiceImpl};
+
+#[cfg(test)]
+pub use error::QueueError;
+
 use self::{
 	deletion_completion_queue::DeletionCompletionQueueImpl,
-	deletion_request_queue::DeletionRequestQueueImpl,
-	username_deletion_service::UsernameDeletionServiceImpl, worker::DataDeletionWorker,
+	deletion_request_queue::DeletionRequestQueueImpl, worker::DataDeletionWorker,
 };
 
 pub async fn init_deletion_worker(
