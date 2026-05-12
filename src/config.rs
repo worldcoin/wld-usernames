@@ -79,6 +79,10 @@ pub struct Config {
 	pub attestation_jwks_url: String,
 	pub whitelisted_avatar_domains: Option<Vec<String>>,
 	pub environment: Environment,
+	/// Shared secret for `/api/v1/internal/*` endpoints. Loaded from the
+	/// `INTERNAL_API_SECRET` env var. `None` when unset or empty, in which case
+	/// every internal endpoint must respond with 403 regardless of `APP_ENV`.
+	internal_api_secret: Option<String>,
 	db_client: Option<PgPool>,
 	db_read_client: Option<PgPool>,
 	redis_pool: Option<ConnectionManagerDebug>,
@@ -172,6 +176,10 @@ impl Config {
 			}
 		}
 
+		let internal_api_secret = env::var("INTERNAL_API_SECRET")
+			.ok()
+			.filter(|s| !s.is_empty());
+
 		Ok(Self {
 			environment,
 			db_client: Some(db_client),
@@ -192,6 +200,7 @@ impl Config {
 				.context("ATTESTATION_JWKS_URL environment variable not set")?,
 			redis_pool: Some(ConnectionManagerDebug::from(redis_pool)),
 			whitelisted_avatar_domains,
+			internal_api_secret,
 			s3_client,
 		})
 	}
@@ -242,6 +251,16 @@ impl Config {
 		self.environment == Environment::Development || self.environment == Environment::Staging
 	}
 
+	/// Returns the configured internal API shared secret, if any.
+	///
+	/// `None` means the shared-secret env var was unset or empty at startup.
+	/// Callers protecting `/api/v1/internal/*` endpoints MUST treat `None` as
+	/// "fail-closed" (i.e. respond 403) so that a missing secret in
+	/// dev/staging never leaves the endpoints reachable without authn.
+	pub fn internal_api_secret(&self) -> Option<&str> {
+		self.internal_api_secret.as_deref()
+	}
+
 	#[cfg(test)]
 	pub fn test_config(env: Environment) -> Self {
 		use idkit::session::AppId;
@@ -254,6 +273,7 @@ impl Config {
 			developer_portal_url: "http://test.com".to_string(),
 			attestation_jwks_url: "http://test.com/jwks".to_string(),
 			whitelisted_avatar_domains: None,
+			internal_api_secret: None,
 			db_client: None,
 			db_read_client: None,
 			redis_pool: None,

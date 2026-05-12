@@ -37,10 +37,16 @@ cargo sqlx prepare
 ## 🧪 Dev/E2E Endpoints
 
 The following endpoints are intended for local development and e2e tests
-only. They are gated by the same flag as `x-e2e-skip-attestation`: the
-service must run with `APP_ENV=development` or `APP_ENV=staging`, **and** the
-caller must send `x-e2e-skip-attestation: true`. In production they always
-respond with `403 Forbidden`.
+only. They are gated by **three** conditions, all of which must hold:
+
+1. The service runs with `APP_ENV=development` or `APP_ENV=staging`
+   (production always returns `403 Forbidden`).
+2. The caller sends `x-e2e-skip-attestation: true`.
+3. The caller sends `x-internal-api-secret: <secret>` whose value matches the
+   `INTERNAL_API_SECRET` env var configured on the server. The secret is
+   compared in constant time. If `INTERNAL_API_SECRET` is unset or empty on
+   the server, every internal endpoint fails closed (403) regardless of the
+   other conditions.
 
 - `DELETE /api/v1/internal/usernames/:address` — deletes the username record
   associated with a wallet address (idempotent). Wraps the same

@@ -74,6 +74,7 @@ k256 = "0.13.4"
 jsonwebtoken = { version = "10.0.0", features = ["aws_lc_rs"] }
 sha2 = "0.10.9"
 multer = "3.1.0"
+subtle = "2.6.1"
 
 [dev-dependencies]
 wiremock = "0.6"

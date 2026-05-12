@@ -5,6 +5,7 @@ use axum::{
 	Extension,
 };
 use redis::aio::ConnectionManager;
+use subtle::ConstantTimeEq;
 use tracing::{info, instrument, warn};
 
 use crate::{
@@ -14,12 +15,14 @@ use crate::{
 };
 
 pub(super) const SKIP_ATTESTATION_HEADER: &str = "x-e2e-skip-attestation";
+pub(super) const INTERNAL_API_SECRET_HEADER: &str = "x-internal-api-secret";
 
 /// Returns `true` when the request is allowed to use the dev/internal endpoint:
 /// the runtime environment must allow skipping attestation (Development or Staging),
 /// and the request must carry `x-e2e-skip-attestation: true`.
 pub(super) fn is_e2e_skip_allowed(
 	allowed_to_skip_attestation: bool,
+	expected_secret: Option<&str>,
 	headers: &HeaderMap,
 ) -> bool {
 	let header_present = headers
@@ -27,7 +30,18 @@ pub(super) fn is_e2e_skip_allowed(
 		.and_then(|v| v.to_str().ok())
 		.is_some_and(|v| v == "true");
 
-	allowed_to_skip_attestation && header_present
+	let provided_secret = headers
+		.get(INTERNAL_API_SECRET_HEADER)
+		.and_then(|v| v.to_str().ok());
+
+	let secret_ok = match (expected_secret, provided_secret) {
+		(Some(expected), Some(provided)) if !expected.is_empty() => {
+			expected.as_bytes().ct_eq(provided.as_bytes()).into()
+		},
+		_ => false,
+	};
+
+	allowed_to_skip_attestation && header_present && secret_ok
 }
 
 /// Pure handler logic, decoupled from axum extensions for testability.
@@ -38,10 +52,11 @@ pub(super) fn is_e2e_skip_allowed(
 async fn handle_delete_username(
 	service: &dyn UsernameDeletionService,
 	allowed_to_skip_attestation: bool,
+	expected_secret: Option<&str>,
 	headers: &HeaderMap,
 	address: &str,
 ) -> Result<StatusCode, ErrorResponse> {
-	if !is_e2e_skip_allowed(allowed_to_skip_attestation, headers) {
+	if !is_e2e_skip_allowed(allowed_to_skip_attestation, expected_secret, headers) {
 		warn!("Dev delete_username endpoint called without valid e2e skip context");
 		return Err(ErrorResponse::forbidden(
 			"This endpoint is only available in dev/e2e contexts.".to_string(),
@@ -83,6 +98,7 @@ pub async fn delete_username(
 	handle_delete_username(
 		&service,
 		config.allowed_to_skip_attestation(),
+		config.internal_api_secret(),
 		&headers,
 		&address,
 	)
@@ -92,9 +108,9 @@ pub async fn delete_username(
 pub fn docs(op: TransformOperation) -> TransformOperation {
 	op.description(
 		"Dev/internal endpoint to delete a username record by wallet address. \
-		 Available only in Development/Staging environments and only when the \
-		 `x-e2e-skip-attestation: true` header is present. Intended for e2e \
-		 test cleanup; idempotent.",
+		 Available only in Development/Staging environments and only when both \
+		 `x-e2e-skip-attestation: true` and a matching `x-internal-api-secret` \
+		 header are present. Intended for e2e test cleanup; idempotent.",
 	)
 }
 
@@ -110,38 +126,83 @@ mod tests {
 		Arc,
 	};
 
+	const TEST_SECRET: &str = "test-internal-secret-do-not-use-in-prod";
+
+	fn headers_with(skip: Option<&'static str>, secret: Option<&'static str>) -> HeaderMap {
+		let mut headers = HeaderMap::new();
+		if let Some(v) = skip {
+			headers.insert(SKIP_ATTESTATION_HEADER, HeaderValue::from_static(v));
+		}
+		if let Some(v) = secret {
+			headers.insert(INTERNAL_API_SECRET_HEADER, HeaderValue::from_static(v));
+		}
+		headers
+	}
+
 	#[test]
 	fn rejects_when_env_not_allowed() {
-		let mut headers = HeaderMap::new();
-		headers.insert(SKIP_ATTESTATION_HEADER, HeaderValue::from_static("true"));
-		assert!(!is_e2e_skip_allowed(false, &headers));
+		let headers = headers_with(Some("true"), Some(TEST_SECRET));
+		assert!(!is_e2e_skip_allowed(false, Some(TEST_SECRET), &headers));
 	}
 
 	#[test]
-	fn rejects_when_header_missing() {
-		let headers = HeaderMap::new();
-		assert!(!is_e2e_skip_allowed(true, &headers));
+	fn rejects_when_skip_header_missing() {
+		let headers = headers_with(None, Some(TEST_SECRET));
+		assert!(!is_e2e_skip_allowed(true, Some(TEST_SECRET), &headers));
 	}
 
 	#[test]
-	fn rejects_when_header_is_not_true() {
-		let mut headers = HeaderMap::new();
-		headers.insert(SKIP_ATTESTATION_HEADER, HeaderValue::from_static("false"));
-		assert!(!is_e2e_skip_allowed(true, &headers));
+	fn rejects_when_skip_header_is_not_true() {
+		let headers = headers_with(Some("false"), Some(TEST_SECRET));
+		assert!(!is_e2e_skip_allowed(true, Some(TEST_SECRET), &headers));
 	}
 
 	#[test]
-	fn rejects_when_header_is_empty() {
-		let mut headers = HeaderMap::new();
-		headers.insert(SKIP_ATTESTATION_HEADER, HeaderValue::from_static(""));
-		assert!(!is_e2e_skip_allowed(true, &headers));
+	fn rejects_when_skip_header_is_empty() {
+		let headers = headers_with(Some(""), Some(TEST_SECRET));
+		assert!(!is_e2e_skip_allowed(true, Some(TEST_SECRET), &headers));
 	}
 
 	#[test]
-	fn allows_when_env_and_header_set() {
-		let mut headers = HeaderMap::new();
-		headers.insert(SKIP_ATTESTATION_HEADER, HeaderValue::from_static("true"));
-		assert!(is_e2e_skip_allowed(true, &headers));
+	fn rejects_when_secret_header_missing() {
+		let headers = headers_with(Some("true"), None);
+		assert!(!is_e2e_skip_allowed(true, Some(TEST_SECRET), &headers));
+	}
+
+	#[test]
+	fn rejects_when_secret_header_does_not_match() {
+		let headers = headers_with(Some("true"), Some("nope"));
+		assert!(!is_e2e_skip_allowed(true, Some(TEST_SECRET), &headers));
+	}
+
+	#[test]
+	fn rejects_when_secret_header_is_empty() {
+		let headers = headers_with(Some("true"), Some(""));
+		assert!(!is_e2e_skip_allowed(true, Some(TEST_SECRET), &headers));
+	}
+
+	#[test]
+	fn rejects_when_expected_secret_is_none_even_if_header_present() {
+		let headers = headers_with(Some("true"), Some(TEST_SECRET));
+		assert!(
+			!is_e2e_skip_allowed(true, None, &headers),
+			"unset INTERNAL_API_SECRET must fail closed"
+		);
+	}
+
+	#[test]
+	fn rejects_when_expected_secret_is_empty_string() {
+		let headers = headers_with(Some("true"), Some(""));
+		assert!(
+			!is_e2e_skip_allowed(true, Some(""), &headers),
+			"empty expected secret must never authorize, even against an empty header"
+		);
+	}
+
+	#[test]
+	fn allows_when_env_and_both_headers_set_and_secret_matches() {
+		let headers = headers_with(Some("true"), Some(TEST_SECRET));
+		assert!(is_e2e_skip_allowed(true, Some(TEST_SECRET), &headers));
 	}
 
 	#[derive(Default)]
@@ -162,20 +223,15 @@ mod tests {
 		}
 	}
 
-	fn headers_with_skip(value: &'static str) -> HeaderMap {
-		let mut headers = HeaderMap::new();
-		headers.insert(SKIP_ATTESTATION_HEADER, HeaderValue::from_static(value));
-		headers
-	}
-
 	#[tokio::test]
-	async fn handler_returns_forbidden_in_production_even_with_header() {
+	async fn handler_returns_forbidden_in_production_even_with_headers() {
 		let service = Arc::new(MockService::default());
-		let headers = headers_with_skip("true");
+		let headers = headers_with(Some("true"), Some(TEST_SECRET));
 
 		let result = handle_delete_username(
 			service.as_ref(),
 			false,
+			Some(TEST_SECRET),
 			&headers,
 			"0x0000000000000000000000000000000000000001",
 		)
@@ -191,13 +247,56 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn handler_returns_forbidden_in_dev_without_header() {
+	async fn handler_returns_forbidden_in_dev_without_headers() {
 		let service = Arc::new(MockService::default());
 		let headers = HeaderMap::new();
 
 		let result = handle_delete_username(
 			service.as_ref(),
 			true,
+			Some(TEST_SECRET),
+			&headers,
+			"0x0000000000000000000000000000000000000001",
+		)
+		.await;
+
+		let response = result.expect_err("should be forbidden").into_response();
+		assert_eq!(response.status(), StatusCode::FORBIDDEN);
+		assert_eq!(service.calls.load(Ordering::SeqCst), 0);
+	}
+
+	#[tokio::test]
+	async fn handler_returns_forbidden_when_secret_missing_in_config() {
+		let service = Arc::new(MockService::default());
+		let headers = headers_with(Some("true"), Some(TEST_SECRET));
+
+		let result = handle_delete_username(
+			service.as_ref(),
+			true,
+			None,
+			&headers,
+			"0x0000000000000000000000000000000000000001",
+		)
+		.await;
+
+		let response = result.expect_err("should be forbidden").into_response();
+		assert_eq!(response.status(), StatusCode::FORBIDDEN);
+		assert_eq!(
+			service.calls.load(Ordering::SeqCst),
+			0,
+			"deletion must not occur when INTERNAL_API_SECRET is unset"
+		);
+	}
+
+	#[tokio::test]
+	async fn handler_returns_forbidden_when_secret_does_not_match() {
+		let service = Arc::new(MockService::default());
+		let headers = headers_with(Some("true"), Some("wrong-secret"));
+
+		let result = handle_delete_username(
+			service.as_ref(),
+			true,
+			Some(TEST_SECRET),
 			&headers,
 			"0x0000000000000000000000000000000000000001",
 		)
@@ -211,11 +310,12 @@ mod tests {
 	#[tokio::test]
 	async fn handler_calls_service_and_returns_no_content_on_success() {
 		let service = Arc::new(MockService::default());
-		let headers = headers_with_skip("true");
+		let headers = headers_with(Some("true"), Some(TEST_SECRET));
 
 		let result = handle_delete_username(
 			service.as_ref(),
 			true,
+			Some(TEST_SECRET),
 			&headers,
 			"0xabCDEF0000000000000000000000000000000123",
 		)
@@ -231,11 +331,12 @@ mod tests {
 			calls: AtomicUsize::new(0),
 			fail: true,
 		});
-		let headers = headers_with_skip("true");
+		let headers = headers_with(Some("true"), Some(TEST_SECRET));
 
 		let result = handle_delete_username(
 			service.as_ref(),
 			true,
+			Some(TEST_SECRET),
 			&headers,
 			"0x0000000000000000000000000000000000000001",
 		)
