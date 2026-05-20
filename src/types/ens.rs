@@ -2,7 +2,6 @@
 
 use alloy::sol_types::{sol, SolCall};
 use anyhow::bail;
-use std::string::FromUtf8Error;
 
 use crate::utils::decode_ens_name;
 
@@ -39,8 +38,8 @@ pub enum Method {
 }
 
 impl resolveCall {
-	pub fn parse_name(&self) -> Result<String, FromUtf8Error> {
-		Ok(decode_ens_name(&String::from_utf8(self.name.to_vec())?))
+	pub fn parse_name(&self) -> anyhow::Result<String> {
+		decode_ens_name(&String::from_utf8(self.name.to_vec())?)
 	}
 
 	pub fn parse_method(&self) -> anyhow::Result<Method> {
