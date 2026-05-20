@@ -116,11 +116,11 @@ pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::Transfo
 }
 
 fn decode_payload(payload: &ENSQueryPayload) -> Result<(Vec<u8>, String, Method), anyhow::Error> {
-	let data = if payload.data.ends_with(".json") {
-		&payload.data[2..payload.data.len() - 5]
-	} else {
-		&payload.data[2..]
-	};
+	let stripped = payload
+		.data
+		.strip_prefix("0x")
+		.ok_or_else(|| anyhow::anyhow!("payload data must start with 0x"))?;
+	let data = stripped.strip_suffix(".json").unwrap_or(stripped);
 	let req_data = hex::decode(data)?;
 	let decoded_req = ResolveRequest::abi_decode(&req_data, true)?;
 
