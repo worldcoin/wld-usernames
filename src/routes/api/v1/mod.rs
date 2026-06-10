@@ -8,6 +8,7 @@ use std::sync::Arc;
 mod avatar;
 mod delete_profile_picture;
 mod ens_gateway;
+mod internal;
 mod profile_picture;
 mod query_multiple;
 mod query_single;
@@ -85,4 +86,5 @@ pub fn handler() -> ApiRouter {
 				},
 			)),
 		)
+		.nest("/internal", internal::handler())
 }

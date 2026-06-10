@@ -7068,6 +7068,7 @@ dependencies = [
  "sha2",
  "sqlx",
  "sqlxinsert",
+ "subtle",
  "thiserror 1.0.69",
  "tokio",
  "tower 0.5.2",
