@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM old_names WHERE LOWER(old_username) = LOWER($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a8757f650e54bfcea13234173d697f0f96425bf664de48a447bc41eab0e7d1cd"
+}

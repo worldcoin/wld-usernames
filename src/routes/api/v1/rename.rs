@@ -94,13 +94,11 @@ pub async fn rename(
 	})?;
 
 	let uniqueness_check = sqlx::query!(
-		"SELECT
-            EXISTS(SELECT 1 FROM old_names where LOWER(new_username) = LOWER($1)) AS has_old_username,
-            EXISTS(SELECT 1 FROM names WHERE LOWER(username) = LOWER($2) 
-                UNION 
-                SELECT 1 FROM old_names where LOWER(old_username) = LOWER($2) AND LOWER(new_username) != LOWER($1)
-            ) AS username
-        ",
+		"SELECT EXISTS(
+			SELECT 1 FROM names WHERE LOWER(username) = LOWER($2)
+			UNION
+			SELECT 1 FROM old_names WHERE LOWER(old_username) = LOWER($2) AND LOWER(new_username) != LOWER($1)
+		) AS username",
 		&payload.old_username,
 		&payload.new_username,
 	)
@@ -121,19 +119,10 @@ pub async fn rename(
 
 	let mut tx = db.read_write.begin().await?;
 
-	if uniqueness_check.has_old_username.unwrap_or_default() {
-		sqlx::query!(
-			"DELETE FROM old_names WHERE new_username = $1",
-			&payload.old_username
-		)
-		.execute(&mut *tx)
-		.instrument(info_span!(
-			"rename_delete_old_name",
-			username = payload.old_username
-		))
-		.await?;
-	}
-
+	// Rename the active name. The `old_names.new_username` foreign key is
+	// `ON UPDATE CASCADE`, so any reservation that still points at the old name
+	// is automatically repointed to the new one — keeping earlier names in a
+	// rename chain reserved instead of orphaning them.
 	let Some(moved_address) = sqlx::query_as!(
 		MovedAddress,
 		"UPDATE names SET username = $1 WHERE username = $2 RETURNING address",
@@ -151,18 +140,7 @@ pub async fn rename(
 		return Err(ErrorResponse::not_found("Username not found".to_string()));
 	};
 
-	sqlx::query!(
-		"INSERT INTO old_names (old_username, new_username) VALUES ($1, $2)",
-		&payload.old_username,
-		&payload.new_username,
-	)
-	.execute(&mut *tx)
-	.instrument(info_span!(
-		"rename_insert_old_name",
-		old_username = payload.old_username,
-		new_username = payload.new_username
-	))
-	.await?;
+	reserve_old_name(&mut *tx, &payload.old_username, &payload.new_username).await?;
 
 	tx.commit().await?;
 
@@ -181,4 +159,141 @@ pub async fn rename(
 
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
 	op.description("Change your World App username to a new one.")
+}
+
+/// Records a rename in the `old_names` reservation table within the caller's
+/// transaction, so the previous username stays reserved (and resolvable) and
+/// cannot be re-registered by anyone else.
+///
+/// The cleanup `DELETE` is scoped by the username that just became **active**
+/// (`new_username`). Scoping it by the name being left behind — as an earlier
+/// version did — deleted the reservation of the *original* name in a rename
+/// chain (A -> B -> C) and let any other World ID re-register it
+/// (HackerOne #3692075).
+async fn reserve_old_name(
+	tx: &mut sqlx::PgConnection,
+	old_username: &str,
+	new_username: &str,
+) -> Result<(), sqlx::Error> {
+	// The new name is active again, so it must not also sit in `old_names`
+	// (e.g. when renaming back to a previously held name). The ON UPDATE
+	// CASCADE on the rename above can also leave a self-referential row to clear.
+	sqlx::query!(
+		"DELETE FROM old_names WHERE LOWER(old_username) = LOWER($1)",
+		new_username
+	)
+	.execute(&mut *tx)
+	.instrument(info_span!(
+		"rename_delete_old_name",
+		username = new_username
+	))
+	.await?;
+
+	// Reserve the name being left behind, repointing it if it somehow already
+	// exists so the rename stays idempotent and never hits a primary-key clash.
+	sqlx::query!(
+		"INSERT INTO old_names (old_username, new_username)
+		VALUES ($1, $2)
+		ON CONFLICT (old_username) DO UPDATE SET new_username = EXCLUDED.new_username",
+		old_username,
+		new_username
+	)
+	.execute(&mut *tx)
+	.instrument(info_span!(
+		"rename_insert_old_name",
+		old_username = old_username,
+		new_username = new_username
+	))
+	.await?;
+
+	Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+	use sqlx::PgPool;
+
+	async fn seed(pool: &PgPool, username: &str) {
+		sqlx::query(
+			"INSERT INTO names (username, address, nullifier_hash, verification_level)
+			VALUES ($1, $2, $3, 'orb')",
+		)
+		.bind(username)
+		.bind("0x0000000000000000000000000000000000000001")
+		.bind(format!("nullifier-{username}"))
+		.execute(pool)
+		.await
+		.unwrap();
+	}
+
+	/// Mirrors the rename handler's transaction body: rename the active row,
+	/// then record the reservation through the production helper.
+	async fn do_rename(pool: &PgPool, old: &str, new: &str) {
+		let mut tx = pool.begin().await.unwrap();
+		sqlx::query("UPDATE names SET username = $1 WHERE username = $2")
+			.bind(new)
+			.bind(old)
+			.execute(&mut *tx)
+			.await
+			.unwrap();
+		super::reserve_old_name(&mut *tx, old, new).await.unwrap();
+		tx.commit().await.unwrap();
+	}
+
+	/// The same "is this name taken?" predicate `register_username` uses.
+	async fn is_reserved(pool: &PgPool, username: &str) -> bool {
+		sqlx::query_scalar::<_, bool>(
+			"SELECT EXISTS(
+				SELECT 1 FROM names WHERE LOWER(username) = LOWER($1)
+				UNION
+				SELECT 1 FROM old_names WHERE LOWER(old_username) = LOWER($1)
+			)",
+		)
+		.bind(username)
+		.fetch_one(pool)
+		.await
+		.unwrap()
+	}
+
+	#[sqlx::test(migrations = "./migrations")]
+	async fn original_name_stays_reserved_through_chain(pool: PgPool) {
+		seed(&pool, "vitalik").await;
+		do_rename(&pool, "vitalik", "vitalik1").await;
+		do_rename(&pool, "vitalik1", "vitalik2").await;
+
+		// Regression for HackerOne #3692075: the original name must remain
+		// reserved after a multi-rename chain so nobody else can claim it.
+		assert!(
+			is_reserved(&pool, "vitalik").await,
+			"original username was freed after A->B->C"
+		);
+		assert!(is_reserved(&pool, "vitalik1").await);
+		assert!(is_reserved(&pool, "vitalik2").await);
+	}
+
+	#[sqlx::test(migrations = "./migrations")]
+	async fn rename_back_keeps_name_active_without_self_reference(pool: PgPool) {
+		seed(&pool, "alice").await;
+		do_rename(&pool, "alice", "alice1").await;
+		do_rename(&pool, "alice1", "alice").await;
+
+		assert!(is_reserved(&pool, "alice").await);
+		assert!(is_reserved(&pool, "alice1").await);
+
+		let active: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM names WHERE username = 'alice'")
+			.fetch_one(&pool)
+			.await
+			.unwrap();
+		assert_eq!(active, 1, "alice should be active again after rename-back");
+
+		let self_refs: i64 =
+			sqlx::query_scalar("SELECT COUNT(*) FROM old_names WHERE old_username = new_username")
+				.fetch_one(&pool)
+				.await
+				.unwrap();
+		assert_eq!(
+			self_refs, 0,
+			"rename-back must not leave a self-referential row"
+		);
+	}
 }

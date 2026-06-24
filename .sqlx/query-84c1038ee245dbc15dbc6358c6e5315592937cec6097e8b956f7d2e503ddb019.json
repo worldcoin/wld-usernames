@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n\t\t\tSELECT 1 FROM names WHERE LOWER(username) = LOWER($2)\n\t\t\tUNION\n\t\t\tSELECT 1 FROM old_names WHERE LOWER(old_username) = LOWER($2) AND LOWER(new_username) != LOWER($1)\n\t\t) AS username",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "84c1038ee245dbc15dbc6358c6e5315592937cec6097e8b956f7d2e503ddb019"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO old_names (old_username, new_username)\n\t\tVALUES ($1, $2)\n\t\tON CONFLICT (old_username) DO UPDATE SET new_username = EXCLUDED.new_username",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a8d4799bcd346bd369afb8c81c437b8110d8fb6f04bcc0af34bc9a99177d8e5a"
+}
