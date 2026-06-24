@@ -1,5 +1,7 @@
+use std::time::Duration;
+
 use crate::{
-	config::{get_opensearch_client, USERNAME_SEARCH_REGEX},
+	config::{get_opensearch_client, ConfigExt, USERNAME_SEARCH_REGEX},
 	types::{ErrorResponse, UsernameRecord},
 	utils::ONE_MINUTE_IN_SECONDS,
 };
@@ -10,9 +12,11 @@ use axum::{
 };
 use axum_jsonschema::Json;
 use redis::{aio::ConnectionManager, AsyncCommands};
+use tokio::time::timeout;
 use tracing::{info_span, Instrument};
 
 pub async fn search(
+	Extension(config): ConfigExt,
 	Extension(mut redis): Extension<ConnectionManager>,
 	Path(username): Path<String>,
 ) -> Result<Response, ErrorResponse> {
@@ -31,33 +35,59 @@ pub async fn search(
 		}
 	}
 
-	let opensearch_client = get_opensearch_client().expect("OpenSearch client should be available");
+	// OpenSearch is a hard dependency for this endpoint, but a bounded one:
+	// - never hang on a slow query (staging saw p99 ~15s, max ~29s), and
+	// - never panic if the client failed to initialise at startup (the old
+	//   `.expect()` aborted the whole process under panic=abort).
+	// On any failure we return a retryable 503 rather than a 500 or a hang.
+	let Some(client) = get_opensearch_client() else {
+		tracing::error!("OpenSearch client unavailable");
+		return Err(ErrorResponse::service_unavailable(
+			"Search is temporarily unavailable".to_string(),
+		));
+	};
 
-	match opensearch_client
-		.search_usernames(&lowercase_username, 10)
-		.instrument(info_span!(
-			"search_opensearch_query",
-			username = lowercase_username
-		))
-		.await
+	let deadline = config.search_opensearch_timeout;
+	// Ask OpenSearch to self-limit slightly before our hard client deadline so
+	// we usually get a clean response back rather than dropping the connection.
+	let server_timeout = deadline
+		.saturating_sub(Duration::from_millis(250))
+		.max(Duration::from_millis(100));
+
+	let records = match timeout(
+		deadline,
+		client
+			.search_usernames(&lowercase_username, 10, server_timeout)
+			.instrument(info_span!(
+				"search_opensearch_query",
+				username = lowercase_username
+			)),
+	)
+	.await
 	{
-		Ok(records) => {
-			// cache the results
-			if let Ok(json_data) = serde_json::to_string(&records) {
-				let _: Result<(), redis::RedisError> = redis
-					.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 5)
-					.await;
-			}
+		Ok(Ok(records)) => records,
+		Ok(Err(e)) => {
+			tracing::error!(error = %e, "OpenSearch search failed");
+			return Err(ErrorResponse::service_unavailable(
+				"Search is temporarily unavailable".to_string(),
+			));
+		},
+		Err(_elapsed) => {
+			tracing::error!(timeout = ?deadline, "OpenSearch search timed out");
+			return Err(ErrorResponse::service_unavailable(
+				"Search is temporarily unavailable".to_string(),
+			));
+		},
+	};
 
-			Ok(Json(records).into_response())
-		},
-		Err(e) => {
-			tracing::error!("OpenSearch search failed: {}", e);
-			Err(ErrorResponse::server_error(
-				"Search service failure".to_string(),
-			))
-		},
+	// cache the results
+	if let Ok(json_data) = serde_json::to_string(&records) {
+		let _: Result<(), redis::RedisError> = redis
+			.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 5)
+			.await;
 	}
+
+	Ok(Json(records).into_response())
 }
 
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {

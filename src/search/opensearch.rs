@@ -62,6 +62,24 @@ impl OpenSearchClient {
 		Ok(opensearch_client)
 	}
 
+	/// Build a client pointing at an arbitrary endpoint without the startup
+	/// index-existence check. Test-only seam so we can drive `search_usernames`
+	/// against a mock server.
+	#[cfg(test)]
+	fn with_endpoint(url: &str, index_name: &str) -> Result<Self> {
+		let base_url = Url::parse(url).context("Failed to parse OpenSearch URL")?;
+		let conn_pool = SingleNodeConnectionPool::new(base_url);
+		let transport = TransportBuilder::new(conn_pool)
+			.timeout(Duration::from_secs(5))
+			.cert_validation(CertificateValidation::None)
+			.disable_proxy()
+			.build()?;
+		Ok(Self {
+			client: OpenSearch::new(transport),
+			index_name: index_name.to_string(),
+		})
+	}
+
 	async fn ensure_index_exists(&self) -> Result<()> {
 		// check if index exists
 		let response = self
@@ -153,10 +171,22 @@ impl OpenSearchClient {
 		Ok(())
 	}
 
-	/// search for usernames with fuzzy matching
-	pub async fn search_usernames(&self, query: &str, limit: usize) -> Result<Vec<UsernameRecord>> {
+	/// search for usernames with fuzzy matching.
+	///
+	/// `server_timeout` is passed through as the `OpenSearch` request-body
+	/// `timeout` so the cluster stops working on a slow query instead of
+	/// churning after the caller has given up. It is best-effort: a
+	/// `timed_out: true` response is treated as a failure. The authoritative
+	/// deadline is the caller's `tokio::time::timeout`.
+	pub async fn search_usernames(
+		&self,
+		query: &str,
+		limit: usize,
+		server_timeout: Duration,
+	) -> Result<Vec<UsernameRecord>> {
 		let search_query = json!({
 			"size": limit,
+			"timeout": format!("{}ms", server_timeout.as_millis()),
 			"query": {
 				"bool": {
 					"should": [
@@ -199,6 +229,16 @@ impl OpenSearchClient {
 		}
 
 		let response_body = response.json::<Value>().await?;
+
+		// OpenSearch hit its server-side `timeout` and returned partial results;
+		// surface it as an error so the caller returns 503 rather than serving an
+		// incomplete result set.
+		if response_body["timed_out"].as_bool() == Some(true) {
+			return Err(anyhow::anyhow!(
+				"OpenSearch reported timed_out=true (server_timeout exceeded)"
+			));
+		}
+
 		let hits = response_body["hits"]["hits"]
 			.as_array()
 			.context("Expected hits array in response")?;
@@ -244,5 +284,80 @@ impl OpenSearchClient {
 		}
 
 		Ok(results)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::OpenSearchClient;
+	use std::time::Duration;
+	use wiremock::matchers::{method, path};
+	use wiremock::{Mock, MockServer, ResponseTemplate};
+
+	fn client_for(server: &MockServer) -> OpenSearchClient {
+		OpenSearchClient::with_endpoint(&server.uri(), "names").unwrap()
+	}
+
+	async fn mount_search(server: &MockServer, template: ResponseTemplate) {
+		Mock::given(method("POST"))
+			.and(path("/names/_search"))
+			.respond_with(template)
+			.mount(server)
+			.await;
+	}
+
+	#[tokio::test]
+	async fn parses_hits_on_success() {
+		let server = MockServer::start().await;
+		let body = serde_json::json!({
+			"timed_out": false,
+			"hits": { "hits": [{ "_source": {
+				"username": "alice",
+				"address": "0x0000000000000000000000000000000000000001"
+			}}]}
+		});
+		mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
+
+		let records = client_for(&server)
+			.search_usernames("ali", 10, Duration::from_secs(1))
+			.await
+			.expect("successful search should parse");
+
+		assert_eq!(records.len(), 1);
+		assert_eq!(records[0].username, "alice");
+	}
+
+	#[tokio::test]
+	async fn errors_on_upstream_5xx() {
+		// A 5xx from OpenSearch must surface as Err so the handler returns 503
+		// rather than a 500 or a hang.
+		let server = MockServer::start().await;
+		mount_search(
+			&server,
+			ResponseTemplate::new(503).set_body_string("service unavailable"),
+		)
+		.await;
+
+		let result = client_for(&server)
+			.search_usernames("ali", 10, Duration::from_secs(1))
+			.await;
+
+		assert!(result.is_err(), "5xx should surface as Err");
+	}
+
+	#[tokio::test]
+	async fn errors_on_server_side_timed_out() {
+		// OpenSearch hit its request-body `timeout` and returned partial results
+		// with `timed_out: true`; treat as a failure so we don't serve an
+		// incomplete result set.
+		let server = MockServer::start().await;
+		let body = serde_json::json!({ "timed_out": true, "hits": { "hits": [] } });
+		mount_search(&server, ResponseTemplate::new(200).set_body_json(body)).await;
+
+		let result = client_for(&server)
+			.search_usernames("ali", 10, Duration::from_secs(1))
+			.await;
+
+		assert!(result.is_err(), "timed_out=true should surface as Err");
 	}
 }

@@ -79,6 +79,11 @@ pub struct Config {
 	pub attestation_jwks_url: String,
 	pub whitelisted_avatar_domains: Option<Vec<String>>,
 	pub environment: Environment,
+	/// Hard upper bound on how long `/search` waits for `OpenSearch` before
+	/// returning a retryable 503. Keeps a slow query (staging p99 ~15s, max
+	/// ~29s) from hanging the request and tripping upstream/client deadlines.
+	/// Tunable via `SEARCH_OPENSEARCH_TIMEOUT_MS`.
+	pub search_opensearch_timeout: Duration,
 	/// Shared secret for `/api/v1/internal/*` endpoints. Loaded from the
 	/// `INTERNAL_API_SECRET` env var. `None` when unset or empty, in which case
 	/// every internal endpoint must respond with 403 regardless of `APP_ENV`.
@@ -180,8 +185,14 @@ impl Config {
 			.ok()
 			.filter(|s| !s.is_empty());
 
+		// Conservative default: prod OpenSearch p99 is ~1s, so 2s lets ~all
+		// queries finish on the fast path while capping the catastrophic tail.
+		let search_opensearch_timeout =
+			Duration::from_millis(env_millis("SEARCH_OPENSEARCH_TIMEOUT_MS", 2000));
+
 		Ok(Self {
 			environment,
+			search_opensearch_timeout,
 			db_client: Some(db_client),
 			db_read_client: Some(db_read_client),
 			blocklist: Some(blocklist),
@@ -267,6 +278,7 @@ impl Config {
 
 		Self {
 			environment: env,
+			search_opensearch_timeout: Duration::from_millis(2000),
 			wld_app_id: unsafe { AppId::new_unchecked("app_test_app_id".to_string()) },
 			ens_domain: "test.eth".to_string(),
 			private_key: "test_private_key".to_string(),
@@ -286,6 +298,15 @@ impl Config {
 			blocklist: None,
 		}
 	}
+}
+
+/// Parse a millisecond-valued env var, falling back to `default` when unset or
+/// unparseable (a bad value should not take down search configuration).
+fn env_millis(var: &str, default: u64) -> u64 {
+	env::var(var)
+		.ok()
+		.and_then(|v| v.trim().parse::<u64>().ok())
+		.unwrap_or(default)
 }
 
 async fn build_redis_pool(mut redis_url: String) -> redis::RedisResult<ConnectionManager> {

@@ -58,6 +58,16 @@ impl ErrorResponse {
 		}
 	}
 
+	/// 503 Service Unavailable. Use for transient dependency breakage where the
+	/// caller should retry (e.g. search backends are all unavailable). Unlike a
+	/// 500, this signals the failure is expected-to-be-temporary and retryable.
+	pub const fn service_unavailable(error: String) -> Self {
+		Self {
+			error,
+			status: StatusCode::SERVICE_UNAVAILABLE,
+		}
+	}
+
 	pub const fn forbidden(error: String) -> Self {
 		Self {
 			error,
