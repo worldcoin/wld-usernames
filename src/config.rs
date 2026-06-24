@@ -25,12 +25,17 @@ use crate::{
 #[allow(clippy::module_name_repetitions)]
 pub type ConfigExt = Extension<Arc<Config>>;
 
+// `(?-u)` disables Unicode mode so `\w` and `\d` mean ASCII `[0-9A-Za-z_]` /
+// `[0-9]` only. Without it, Rust's regex crate treats `\w`/`\d` as Unicode-aware,
+// so Cyrillic/other homoglyphs (e.g. `vit\u{0430}lik`) and non-ASCII digits
+// satisfy the middle of a username and can be registered to impersonate a
+// look-alike name. Reported via HackerOne #3699374 and #3704866.
 pub static USERNAME_REGEX: LazyLock<Regex> =
-	LazyLock::new(|| Regex::new(r"^[a-z]\w{2,13}[a-z0-9]$").unwrap());
+	LazyLock::new(|| Regex::new(r"(?-u)^[a-z]\w{2,13}[a-z0-9]$").unwrap());
 pub static DEVICE_USERNAME_REGEX: LazyLock<Regex> =
-	LazyLock::new(|| Regex::new(r"^[a-z]\w{2,13}[a-z0-9]\.\d{4}$").unwrap());
+	LazyLock::new(|| Regex::new(r"(?-u)^[a-z]\w{2,13}[a-z0-9]\.\d{4}$").unwrap());
 pub static USERNAME_SEARCH_REGEX: LazyLock<Regex> =
-	LazyLock::new(|| Regex::new(r"^[a-z]\w{0,13}([a-z0-9](\.\d{1,4})?)$").unwrap());
+	LazyLock::new(|| Regex::new(r"(?-u)^[a-z]\w{0,13}([a-z0-9](\.\d{1,4})?)$").unwrap());
 
 pub static OPENSEARCH_CLIENT: OnceCell<Arc<OpenSearchClient>> = OnceCell::new();
 
@@ -300,4 +305,48 @@ async fn build_redis_pool(mut redis_url: String) -> redis::RedisResult<Connectio
 
 pub fn get_opensearch_client() -> Option<Arc<OpenSearchClient>> {
 	OPENSEARCH_CLIENT.get().cloned()
+}
+
+#[cfg(test)]
+mod regex_tests {
+	use super::{DEVICE_USERNAME_REGEX, USERNAME_REGEX, USERNAME_SEARCH_REGEX};
+
+	#[test]
+	fn accepts_valid_ascii_usernames() {
+		for u in ["abcd", "vitalik", "alice1", "bob_the_builder"] {
+			assert!(USERNAME_REGEX.is_match(u), "should accept {u}");
+		}
+	}
+
+	#[test]
+	fn rejects_non_ascii_homoglyphs() {
+		// Cyrillic 'а' (U+0430) is visually identical to ASCII 'a'.
+		assert!(
+			!USERNAME_REGEX.is_match("vit\u{0430}lik"),
+			"Unicode homoglyph must be rejected (HackerOne #3699374 / #3704866)"
+		);
+		// Other non-ASCII word characters anywhere in the name.
+		for u in [
+			"\u{0430}dmin1",   // leading Cyrillic 'а'
+			"v\u{0456}talik",  // Cyrillic 'і'
+			"vitalik\u{200b}", // trailing zero-width space
+		] {
+			assert!(!USERNAME_REGEX.is_match(u), "should reject {u:?}");
+		}
+	}
+
+	#[test]
+	fn device_regex_rejects_non_ascii() {
+		assert!(DEVICE_USERNAME_REGEX.is_match("vitalik.1234"));
+		// Arabic-Indic digits must not satisfy the \d{4} device suffix.
+		assert!(!DEVICE_USERNAME_REGEX.is_match("vitalik.\u{0661}\u{0662}\u{0663}\u{0664}"));
+		assert!(!DEVICE_USERNAME_REGEX.is_match("vit\u{0430}lik.1234"));
+	}
+
+	#[test]
+	fn search_regex_is_ascii_only() {
+		assert!(USERNAME_SEARCH_REGEX.is_match("vitalik"));
+		assert!(USERNAME_SEARCH_REGEX.is_match("vital.12"));
+		assert!(!USERNAME_SEARCH_REGEX.is_match("vit\u{0430}lik"));
+	}
 }
