@@ -1,7 +1,9 @@
 use std::time::Duration;
 
+use anyhow::Context;
+
 use crate::{
-	config::{get_opensearch_client, ConfigExt, USERNAME_SEARCH_REGEX},
+	config::{get_or_init_opensearch_client, ConfigExt, USERNAME_SEARCH_REGEX},
 	types::{ErrorResponse, UsernameRecord},
 	utils::ONE_MINUTE_IN_SECONDS,
 };
@@ -35,18 +37,12 @@ pub async fn search(
 		}
 	}
 
-	// OpenSearch is a hard dependency for this endpoint, but a bounded one:
-	// - never hang on a slow query (staging saw p99 ~15s, max ~29s), and
-	// - never panic if the client failed to initialise at startup (the old
-	//   `.expect()` aborted the whole process under panic=abort).
-	// On any failure we return a retryable 503 rather than a 500 or a hang.
-	let Some(client) = get_opensearch_client() else {
-		tracing::error!("OpenSearch client unavailable");
-		return Err(ErrorResponse::service_unavailable(
-			"Search is temporarily unavailable".to_string(),
-		));
-	};
-
+	// OpenSearch is a hard dependency for this endpoint, but a bounded one. The
+	// whole operation — lazily (re)initialising the client if a transient
+	// startup failure left it unset, then querying — runs under a single hard
+	// deadline, so a slow or unavailable OpenSearch never hangs the request. On
+	// any failure we return a retryable 503, rather than a 500, a hang, or (as
+	// before) a process-aborting panic when the client is missing.
 	let deadline = config.search_opensearch_timeout;
 	// Ask OpenSearch to self-limit slightly before our hard client deadline so
 	// we usually get a clean response back rather than dropping the connection.
@@ -54,17 +50,20 @@ pub async fn search(
 		.saturating_sub(Duration::from_millis(250))
 		.max(Duration::from_millis(100));
 
-	let records = match timeout(
-		deadline,
+	let query = async {
+		let client = get_or_init_opensearch_client()
+			.await
+			.context("OpenSearch client unavailable")?;
 		client
 			.search_usernames(&lowercase_username, 10, server_timeout)
 			.instrument(info_span!(
 				"search_opensearch_query",
 				username = lowercase_username
-			)),
-	)
-	.await
-	{
+			))
+			.await
+	};
+
+	let records = match timeout(deadline, query).await {
 		Ok(Ok(records)) => records,
 		Ok(Err(e)) => {
 			tracing::error!(error = %e, "OpenSearch search failed");

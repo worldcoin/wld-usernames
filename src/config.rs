@@ -3,7 +3,7 @@ use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client as S3Client;
 use axum::Extension;
 use idkit::session::AppId;
-use once_cell::sync::OnceCell;
+use tokio::sync::OnceCell;
 use redis::aio::ConnectionManager;
 use regex::Regex;
 use sqlx::{migrate::MigrateError, postgres::PgPoolOptions, PgPool};
@@ -37,7 +37,7 @@ pub static DEVICE_USERNAME_REGEX: LazyLock<Regex> =
 pub static USERNAME_SEARCH_REGEX: LazyLock<Regex> =
 	LazyLock::new(|| Regex::new(r"(?-u)^[a-z]\w{0,13}([a-z0-9](\.\d{1,4})?)$").unwrap());
 
-pub static OPENSEARCH_CLIENT: OnceCell<Arc<OpenSearchClient>> = OnceCell::new();
+pub static OPENSEARCH_CLIENT: OnceCell<Arc<OpenSearchClient>> = OnceCell::const_new();
 
 #[derive(Clone)]
 pub struct ConnectionManagerDebug {
@@ -181,7 +181,10 @@ impl Config {
 					let _ = OPENSEARCH_CLIENT.set(Arc::new(client));
 				},
 				Err(e) => {
-					tracing::error!("❌ Failed to connect to OpenSearch: {}", e);
+					tracing::error!(
+						"❌ Failed to connect to OpenSearch at startup (will retry lazily on first search): {}",
+						e
+					);
 				},
 			}
 		}
@@ -324,8 +327,18 @@ async fn build_redis_pool(mut redis_url: String) -> redis::RedisResult<Connectio
 	ConnectionManager::new(client).await
 }
 
-pub fn get_opensearch_client() -> Option<Arc<OpenSearchClient>> {
-	OPENSEARCH_CLIENT.get().cloned()
+/// Return the `OpenSearch` client, lazily (re)building it if it was not
+/// initialised at startup — e.g. `OpenSearch` was briefly unavailable when the
+/// process booted. On a build failure the cell is left empty so the next call
+/// retries, letting search self-heal instead of returning 503 for the entire
+/// lifetime of the process (concurrent callers are serialised by the cell, so
+/// at most one build runs at a time).
+pub async fn get_or_init_opensearch_client() -> Option<Arc<OpenSearchClient>> {
+	OPENSEARCH_CLIENT
+		.get_or_try_init(|| async { OpenSearchClient::new().await.map(Arc::new) })
+		.await
+		.ok()
+		.cloned()
 }
 
 #[cfg(test)]
