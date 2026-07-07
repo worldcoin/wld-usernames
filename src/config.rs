@@ -3,7 +3,7 @@ use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client as S3Client;
 use axum::Extension;
 use idkit::session::AppId;
-use once_cell::sync::OnceCell;
+use tokio::sync::OnceCell;
 use redis::aio::ConnectionManager;
 use regex::Regex;
 use sqlx::{migrate::MigrateError, postgres::PgPoolOptions, PgPool};
@@ -37,7 +37,7 @@ pub static DEVICE_USERNAME_REGEX: LazyLock<Regex> =
 pub static USERNAME_SEARCH_REGEX: LazyLock<Regex> =
 	LazyLock::new(|| Regex::new(r"(?-u)^[a-z]\w{0,13}([a-z0-9](\.\d{1,4})?)$").unwrap());
 
-pub static OPENSEARCH_CLIENT: OnceCell<Arc<OpenSearchClient>> = OnceCell::new();
+pub static OPENSEARCH_CLIENT: OnceCell<Arc<OpenSearchClient>> = OnceCell::const_new();
 
 #[derive(Clone)]
 pub struct ConnectionManagerDebug {
@@ -84,6 +84,11 @@ pub struct Config {
 	pub attestation_jwks_url: String,
 	pub whitelisted_avatar_domains: Option<Vec<String>>,
 	pub environment: Environment,
+	/// Hard upper bound on how long `/search` waits for `OpenSearch` before
+	/// returning a retryable 503. Keeps a slow query (staging p99 ~15s, max
+	/// ~29s) from hanging the request and tripping upstream/client deadlines.
+	/// Tunable via `SEARCH_OPENSEARCH_TIMEOUT_MS`.
+	pub search_opensearch_timeout: Duration,
 	/// Shared secret for `/api/v1/internal/*` endpoints. Loaded from the
 	/// `INTERNAL_API_SECRET` env var. `None` when unset or empty, in which case
 	/// every internal endpoint must respond with 403 regardless of `APP_ENV`.
@@ -176,7 +181,10 @@ impl Config {
 					let _ = OPENSEARCH_CLIENT.set(Arc::new(client));
 				},
 				Err(e) => {
-					tracing::error!("❌ Failed to connect to OpenSearch: {}", e);
+					tracing::error!(
+						"❌ Failed to connect to OpenSearch at startup (will retry lazily on first search): {}",
+						e
+					);
 				},
 			}
 		}
@@ -185,8 +193,14 @@ impl Config {
 			.ok()
 			.filter(|s| !s.is_empty());
 
+		// Conservative default: prod OpenSearch p99 is ~1s, so 2s lets ~all
+		// queries finish on the fast path while capping the catastrophic tail.
+		let search_opensearch_timeout =
+			Duration::from_millis(env_millis("SEARCH_OPENSEARCH_TIMEOUT_MS", 2000));
+
 		Ok(Self {
 			environment,
+			search_opensearch_timeout,
 			db_client: Some(db_client),
 			db_read_client: Some(db_read_client),
 			blocklist: Some(blocklist),
@@ -272,6 +286,7 @@ impl Config {
 
 		Self {
 			environment: env,
+			search_opensearch_timeout: Duration::from_millis(2000),
 			wld_app_id: unsafe { AppId::new_unchecked("app_test_app_id".to_string()) },
 			ens_domain: "test.eth".to_string(),
 			private_key: "test_private_key".to_string(),
@@ -293,6 +308,15 @@ impl Config {
 	}
 }
 
+/// Parse a millisecond-valued env var, falling back to `default` when unset or
+/// unparseable (a bad value should not take down search configuration).
+fn env_millis(var: &str, default: u64) -> u64 {
+	env::var(var)
+		.ok()
+		.and_then(|v| v.trim().parse::<u64>().ok())
+		.unwrap_or(default)
+}
+
 async fn build_redis_pool(mut redis_url: String) -> redis::RedisResult<ConnectionManager> {
 	if !redis_url.starts_with("redis://") && !redis_url.starts_with("rediss://") {
 		redis_url = format!("redis://{redis_url}");
@@ -303,8 +327,18 @@ async fn build_redis_pool(mut redis_url: String) -> redis::RedisResult<Connectio
 	ConnectionManager::new(client).await
 }
 
-pub fn get_opensearch_client() -> Option<Arc<OpenSearchClient>> {
-	OPENSEARCH_CLIENT.get().cloned()
+/// Return the `OpenSearch` client, lazily (re)building it if it was not
+/// initialised at startup — e.g. `OpenSearch` was briefly unavailable when the
+/// process booted. On a build failure the cell is left empty so the next call
+/// retries, letting search self-heal instead of returning 503 for the entire
+/// lifetime of the process (concurrent callers are serialised by the cell, so
+/// at most one build runs at a time).
+pub async fn get_or_init_opensearch_client() -> Option<Arc<OpenSearchClient>> {
+	OPENSEARCH_CLIENT
+		.get_or_try_init(|| async { OpenSearchClient::new().await.map(Arc::new) })
+		.await
+		.ok()
+		.cloned()
 }
 
 #[cfg(test)]
