@@ -1,6 +1,7 @@
 use aide::transform::TransformOperation;
 use axum::{extract::Query, http::StatusCode, Extension};
 use redis::{aio::ConnectionManager, AsyncCommands};
+use serde_json::Value;
 use tracing::{info, info_span, warn, Instrument};
 
 use crate::{
@@ -17,6 +18,61 @@ use crate::{
 	We will move to a different flow.
 */
 
+const PROOF_HEX_LEN: usize = 64 * 8;
+const HASH_HEX_LEN: usize = 64;
+
+fn is_hex_with_prefix(value: &str, expected_len: usize) -> bool {
+	let Some(hex) = value.strip_prefix("0x") else {
+		return false;
+	};
+
+	if hex.len() != expected_len {
+		return false;
+	}
+
+	hex.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+fn is_uint_string(value: &str) -> bool {
+	if value.is_empty() {
+		return false;
+	}
+
+	if let Some(hex) = value.strip_prefix("0x") {
+		return !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit());
+	}
+
+	value.chars().all(|c| c.is_ascii_digit())
+}
+
+fn is_json_uint256_array(value: &str) -> bool {
+	let Ok(values) = serde_json::from_str::<Vec<Value>>(value) else {
+		return false;
+	};
+
+	if values.len() != 8 {
+		return false;
+	}
+
+	values.iter().all(|entry| match entry {
+		Value::String(value) => is_uint_string(value),
+		Value::Number(number) => number.as_u64().is_some(),
+		_ => false,
+	})
+}
+
+fn proof_fields_valid(proof: &str, merkle_root: &str, nullifier_hash: &str) -> bool {
+	if !is_hex_with_prefix(merkle_root, HASH_HEX_LEN) {
+		return false;
+	}
+
+	if !is_hex_with_prefix(nullifier_hash, HASH_HEX_LEN) {
+		return false;
+	}
+
+	is_hex_with_prefix(proof, PROOF_HEX_LEN) || is_json_uint256_array(proof)
+}
+
 #[allow(dependency_on_unit_never_type_fallback)]
 /// This endpoint uses a proof for authentication
 /// Deletes a user-uploaded profile picture and reverts it to the default marble image.
@@ -26,8 +82,18 @@ pub async fn delete_profile_picture(
 	Extension(mut redis): Extension<ConnectionManager>,
 	Query(payload): Query<DeleteProfilePicturePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
+	let proof = payload.into_proof();
+
+	if !proof_fields_valid(&proof.proof, &proof.merkle_root, &proof.nullifier_hash) {
+		tracing::warn!(
+			address = %payload.address,
+			"Rejected delete profile picture with invalid proof format"
+		);
+		return Err(ErrorResponse::bad_request("invalid_proof"));
+	}
+
 	match verify::dev_portal_verify_proof(
-		payload.into_proof(),
+		proof,
 		config.wld_app_id.to_string(),
 		"username",
 		payload.address.clone(),
