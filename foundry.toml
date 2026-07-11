@@ -1,3 +1,4 @@
+# CI configuration behavior check (no functional change)
 [profile.default]
 out = "out"
 src = "contracts"
