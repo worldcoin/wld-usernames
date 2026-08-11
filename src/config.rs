@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client as S3Client;
+use aws_sdk_ssm::Client as SsmClient;
 use axum::Extension;
 use idkit::session::AppId;
 use tokio::sync::OnceCell;
@@ -121,15 +122,51 @@ pub enum Error {
 	Reqwest(#[from] reqwest::Error),
 }
 
+async fn load_reserved_usernames(aws_config: &aws_config::SdkConfig) -> Result<String, Error> {
+	let env_value = env::var("RESERVED_USERNAMES").ok();
+
+	let Some(param_name) = env::var("RESERVED_USERNAMES_SSM_PARAMETER")
+		.ok()
+		.filter(|name| !name.trim().is_empty())
+	else {
+		return env_value
+			.context("RESERVED_USERNAMES environment variable not set")
+			.map_err(Error::from);
+	};
+
+	let output = SsmClient::new(aws_config)
+		.get_parameter()
+		.name(&param_name)
+		.with_decryption(true)
+		.send()
+		.await
+		.map_err(|e| anyhow!("failed to read SSM parameter {param_name}: {e}"))?;
+
+	let ssm_value = output
+		.parameter
+		.and_then(|parameter| parameter.value)
+		.ok_or_else(|| anyhow!("SSM parameter {param_name} has no value"))?;
+
+	tracing::info!("✅ Loaded reserved usernames from SSM parameter {param_name}.");
+
+	Ok(match env_value {
+		Some(env_value) if !env_value.trim().is_empty() => format!("{env_value},{ssm_value}"),
+		_ => ssm_value,
+	})
+}
+
 impl Config {
 	pub async fn from_env() -> Result<Self, Error> {
 		let environment: Environment = env::var("APP_ENV")
 			.context("APP_ENV environment variable not set")?
 			.parse()?;
 
+		// Shared AWS config, reused for SSM (reserved usernames) and S3.
+		let aws_shared_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
+
+		let reserved_usernames = load_reserved_usernames(&aws_shared_config).await?;
 		let blocklist = Blocklist::new(
-			&env::var("RESERVED_USERNAMES")
-				.context("RESERVED_USERNAMES environment variable not set")?,
+			&reserved_usernames,
 			&env::var("BLOCKED_SUBSTRINGS")
 				.context("BLOCKED_SUBSTRINGS environment variable not set")?,
 		);
@@ -168,8 +205,7 @@ impl Config {
 
 		tracing::info!("✅ Connection to Redis established.");
 
-		let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
-		let s3_client = S3Client::new(&config);
+		let s3_client = S3Client::new(&aws_shared_config);
 
 		tracing::info!("✅ S3 client initialized.");
 
