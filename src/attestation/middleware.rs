@@ -80,7 +80,7 @@ pub async fn attestation_middleware(
 	// Turn off audience validation, this can be set to anything by the client and is not relevant here
 	validation.validate_aud = false;
 	validation.validate_nbf = false; // attestation-gateway tokens don't include `nbf` claim
-	validation.set_issuer(&["attestation.worldcoin.org"]);
+	validation.set_issuer(&[config.attestation_issuer()]);
 
 	let token_data =
 		decode::<AttestationClaims>(token, &decoding_key, &validation).map_err(|e| {
