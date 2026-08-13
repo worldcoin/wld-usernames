@@ -43,6 +43,16 @@ fn generate_es256_keypair_and_jwk(kid: &str) -> (SigningKey, serde_json::Value) 
 
 /// Create a signed JWT with ES256
 fn create_test_jwt(signing_key: &SigningKey, kid: &str, jti: String) -> String {
+	create_test_jwt_with_issuer(signing_key, kid, jti, "attestation.worldcoin.org")
+}
+
+/// Create a signed JWT with ES256, minted by an arbitrary `issuer`
+fn create_test_jwt_with_issuer(
+	signing_key: &SigningKey,
+	kid: &str,
+	jti: String,
+	issuer: &str,
+) -> String {
 	use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 
 	let mut header = Header::new(Algorithm::ES256);
@@ -56,7 +66,7 @@ fn create_test_jwt(signing_key: &SigningKey, kid: &str, jti: String) -> String {
 	let claims = serde_json::json!({
 		"jti": jti,
 		"iat": now,
-		"iss": "attestation.worldcoin.org",
+		"iss": issuer,
 		"exp": now + 3600, // 1 hour from now
 	});
 
@@ -340,5 +350,70 @@ async fn test_skip_attestation_blocked_in_production() {
 		response.status(),
 		StatusCode::UNAUTHORIZED,
 		"Should not skip attestation in production even with skip header"
+	);
+}
+
+#[tokio::test]
+async fn test_attestation_middleware_rejects_mismatched_issuer() {
+	// Signature and JTI both valid, but minted by a different gateway than the
+	// one we fetch keys from. Guards production against accepting a
+	// staging-issued token now that the issuer comes from config.
+	let kid = format!("test-key-{}", uuid::Uuid::new_v4());
+	let metadata = r#"{"test": "data"}"#;
+	let boundary = "----boundary123";
+
+	let mock_server = MockServer::start().await;
+	let (signing_key, jwk) = generate_es256_keypair_and_jwk(&kid);
+
+	let mut hasher = Sha256::new();
+	hasher.update(metadata.as_bytes());
+	let jti = hex::encode(hasher.finalize());
+
+	let token = create_test_jwt_with_issuer(&signing_key, &kid, jti, "attestation.worldcoin.dev");
+
+	Mock::given(method("GET"))
+		.and(path("/.well-known/jwks.json"))
+		.respond_with(
+			ResponseTemplate::new(200).set_body_json(&serde_json::json!({ "keys": [jwk] })),
+		)
+		.mount(&mock_server)
+		.await;
+
+	let redis = create_test_redis().await;
+	let jwks_url = format!("{}/.well-known/jwks.json", mock_server.uri());
+	let jwks_cache = Arc::new(JwksCache::new(jwks_url, Duration::from_secs(60), redis));
+
+	// test_config expects attestation.worldcoin.org
+	let config = create_test_config(Environment::Production);
+
+	let app = Router::new()
+		.route("/test", post(|| async { StatusCode::OK }))
+		.route_layer(axum::middleware::from_fn(
+			|Extension(cfg): Extension<Arc<Config>>,
+			 Extension(cache): Extension<Arc<JwksCache>>,
+			 headers,
+			 request,
+			 next| async move { attestation_middleware(cfg, cache, headers, request, next).await },
+		))
+		.layer(Extension(config.clone()))
+		.layer(Extension(jwks_cache.clone()));
+
+	let request = Request::builder()
+		.method(Method::POST)
+		.uri("/test")
+		.header(
+			header::CONTENT_TYPE,
+			format!("multipart/form-data; boundary={}", boundary),
+		)
+		.header("attestation-gateway-token", &token)
+		.body(Body::from(create_multipart_body(metadata, boundary)))
+		.unwrap();
+
+	let response = app.oneshot(request).await.unwrap();
+
+	assert_eq!(
+		response.status(),
+		StatusCode::UNAUTHORIZED,
+		"Should reject a token minted by a different attestation gateway"
 	);
 }

@@ -3,7 +3,6 @@ use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client as S3Client;
 use axum::Extension;
 use idkit::session::AppId;
-use tokio::sync::OnceCell;
 use redis::aio::ConnectionManager;
 use regex::Regex;
 use sqlx::{migrate::MigrateError, postgres::PgPoolOptions, PgPool};
@@ -15,6 +14,7 @@ use std::{
 	sync::{Arc, LazyLock},
 	time::Duration,
 };
+use tokio::sync::OnceCell;
 
 use crate::{
 	attestation::JwksCache,
@@ -82,6 +82,10 @@ pub struct Config {
 	pub private_key: String,
 	pub developer_portal_url: String,
 	pub attestation_jwks_url: String,
+	/// Host of `attestation_jwks_url`, used as the expected `iss` on attestation
+	/// tokens. Derived rather than configured separately so the key we verify
+	/// with and the issuer we trust can never point at different environments.
+	attestation_issuer: String,
 	pub whitelisted_avatar_domains: Option<Vec<String>>,
 	pub environment: Environment,
 	/// Hard upper bound on how long `/search` waits for `OpenSearch` before
@@ -193,6 +197,10 @@ impl Config {
 			.ok()
 			.filter(|s| !s.is_empty());
 
+		let attestation_jwks_url = env::var("ATTESTATION_JWKS_URL")
+			.context("ATTESTATION_JWKS_URL environment variable not set")?;
+		let attestation_issuer = attestation_issuer_from_jwks_url(&attestation_jwks_url)?;
+
 		// Conservative default: prod OpenSearch p99 is ~1s, so 2s lets ~all
 		// queries finish on the fast path while capping the catastrophic tail.
 		let search_opensearch_timeout =
@@ -215,8 +223,8 @@ impl Config {
 			},
 			developer_portal_url: env::var("DEVELOPER_PORTAL_ENDPOINT")
 				.context("DEVELOPER_PORTAL_ENDPOINT environment variable not set")?,
-			attestation_jwks_url: env::var("ATTESTATION_JWKS_URL")
-				.context("ATTESTATION_JWKS_URL environment variable not set")?,
+			attestation_jwks_url,
+			attestation_issuer,
 			redis_pool: Some(ConnectionManagerDebug::from(redis_pool)),
 			whitelisted_avatar_domains,
 			internal_api_secret,
@@ -266,6 +274,12 @@ impl Config {
 		self.s3_client.clone()
 	}
 
+	/// Expected `iss` claim on attestation tokens, derived from
+	/// `ATTESTATION_JWKS_URL`.
+	pub fn attestation_issuer(&self) -> &str {
+		&self.attestation_issuer
+	}
+
 	pub fn allowed_to_skip_attestation(&self) -> bool {
 		self.environment == Environment::Development || self.environment == Environment::Staging
 	}
@@ -291,7 +305,9 @@ impl Config {
 			ens_domain: "test.eth".to_string(),
 			private_key: "test_private_key".to_string(),
 			developer_portal_url: "http://test.com".to_string(),
-			attestation_jwks_url: "http://test.com/jwks".to_string(),
+			attestation_jwks_url: "https://attestation.worldcoin.org/.well-known/jwks.json"
+				.to_string(),
+			attestation_issuer: "attestation.worldcoin.org".to_string(),
 			whitelisted_avatar_domains: None,
 			internal_api_secret: None,
 			db_client: None,
@@ -306,6 +322,16 @@ impl Config {
 			blocklist: None,
 		}
 	}
+}
+
+/// The gateway serves its keys from the same host it puts in `iss`, so one env
+/// var can drive both and they cannot point at different environments.
+fn attestation_issuer_from_jwks_url(jwks_url: &str) -> anyhow::Result<String> {
+	url::Url::parse(jwks_url)
+		.with_context(|| format!("ATTESTATION_JWKS_URL is not a valid URL: {jwks_url}"))?
+		.host_str()
+		.map(ToOwned::to_owned)
+		.ok_or_else(|| anyhow!("ATTESTATION_JWKS_URL has no host: {jwks_url}"))
 }
 
 /// Parse a millisecond-valued env var, falling back to `default` when unset or
@@ -339,6 +365,30 @@ pub async fn get_or_init_opensearch_client() -> Option<Arc<OpenSearchClient>> {
 		.await
 		.ok()
 		.cloned()
+}
+
+#[cfg(test)]
+mod attestation_issuer_tests {
+	use super::attestation_issuer_from_jwks_url;
+
+	#[test]
+	fn derives_issuer_from_deployed_jwks_urls() {
+		// The exact values deployed in world-id-deploy/wld-usernames/parameters.ts.
+		assert_eq!(
+			attestation_issuer_from_jwks_url(
+				"https://attestation.worldcoin.org/.well-known/jwks.json"
+			)
+			.unwrap(),
+			"attestation.worldcoin.org"
+		);
+		assert_eq!(
+			attestation_issuer_from_jwks_url(
+				"https://attestation.worldcoin.dev/.well-known/jwks.json"
+			)
+			.unwrap(),
+			"attestation.worldcoin.dev"
+		);
+	}
 }
 
 #[cfg(test)]
