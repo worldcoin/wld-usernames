@@ -3,11 +3,12 @@ use axum::{
 	response::{IntoResponse, Redirect, Response},
 	Extension,
 };
-use redis::{aio::ConnectionManager, AsyncCommands};
+use redis::aio::ConnectionManager;
 use tracing::{info_span, Instrument};
 use url::Url;
 
 use crate::{
+	cache,
 	config::{Config, ConfigExt, Db},
 	types::{AvatarQueryParams, ErrorResponse, MovedRecord, Name},
 	utils::ONE_MINUTE_IN_SECONDS,
@@ -23,18 +24,33 @@ pub async fn avatar(
 ) -> Result<Response, ErrorResponse> {
 	let minimized = params.minimized.unwrap_or(false);
 	let cache_key = format!(
-		"avatar:{name}:{}",
+		"avatar:{}:{}",
+		name.to_lowercase(),
 		if minimized { "minimized" } else { "original" }
 	);
 
-	if let Ok(avatar_url) = redis.get::<_, String>(&cache_key).await {
-		return Ok(Redirect::temporary(&avatar_url).into_response());
+	let mut deletion_tombstoned = false;
+	match cache::lookup(&mut redis, &cache_key).await {
+		cache::Lookup::Hit(avatar_url) => {
+			return Ok(Redirect::temporary(&avatar_url).into_response());
+		},
+		cache::Lookup::Tombstoned => deletion_tombstoned = true,
+		cache::Lookup::Miss => {},
 	}
+
+	// A tombstoned key means the record was just deleted: a read replica may
+	// still return the deleted row, so verify against the primary instead.
+	// (A row found there is a legitimate re-registration of the freed name.)
+	let db_pool = if deletion_tombstoned {
+		&db.read_write
+	} else {
+		&db.read_only
+	};
 
 	if let Some(record) =
 		sqlx::query_as::<_, Name>("SELECT * FROM names WHERE LOWER(username) = LOWER($1)")
 			.bind(name.as_str())
-			.fetch_optional(&db.read_only)
+			.fetch_optional(db_pool)
 			.instrument(info_span!("avatar_db_query", input = name))
 			.await?
 	{
@@ -45,13 +61,13 @@ pub async fn avatar(
 		};
 
 		if let Some(profile_picture_url) = profile_picture_url {
-			redis
-				.set_ex(
-					&cache_key,
-					&profile_picture_url,
-					ONE_MINUTE_IN_SECONDS * 60 * 24,
-				)
-				.await?;
+			cache::set_ex_unless_tombstoned(
+				&mut redis,
+				&cache_key,
+				&profile_picture_url,
+				ONE_MINUTE_IN_SECONDS * 60 * 24,
+			)
+			.await?;
 
 			return Ok(Redirect::temporary(&profile_picture_url).into_response());
 		}
@@ -68,7 +84,7 @@ pub async fn avatar(
 		"SELECT * FROM old_names WHERE old_username = $1",
 		name
 	)
-	.fetch_optional(&db.read_only)
+	.fetch_optional(db_pool)
 	.instrument(info_span!("avatar_moved_db_query", username = name))
 	.await?
 	{

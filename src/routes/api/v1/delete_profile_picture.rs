@@ -1,9 +1,10 @@
 use aide::transform::TransformOperation;
 use axum::{extract::Query, http::StatusCode, Extension};
-use redis::{aio::ConnectionManager, AsyncCommands};
+use redis::aio::ConnectionManager;
 use tracing::{info, info_span, warn, Instrument};
 
 use crate::{
+	cache,
 	config::{ConfigExt, Db},
 	deletion,
 	routes::api::v1::query_single::validate_address,
@@ -139,15 +140,17 @@ pub async fn delete_profile_picture(
 		deletion::mark_object_for_deletion(config.as_ref(), &cdn_base_url, url).await;
 	}
 
+	// Cache keys are canonical: lowercased username, checksummed address.
+	let username_lowercase = username.to_lowercase();
 	let address_cache_key = format!("query_single:{address_checksum}");
-	let username_cache_key = format!("query_single:{username}");
-	let avatar_original_cache_key = format!("avatar:{username}:original");
-	let avatar_minimized_cache_key = format!("avatar:{username}:minimized");
+	let username_cache_key = format!("query_single:{username_lowercase}");
+	let avatar_original_cache_key = format!("avatar:{username_lowercase}:original");
+	let avatar_minimized_cache_key = format!("avatar:{username_lowercase}:minimized");
 
-	let _: Result<(), redis::RedisError> = redis.del(address_cache_key).await;
-	let _: Result<(), redis::RedisError> = redis.del(username_cache_key).await;
-	let _: Result<(), redis::RedisError> = redis.del(avatar_original_cache_key).await;
-	let _: Result<(), redis::RedisError> = redis.del(avatar_minimized_cache_key).await;
+	let _ = cache::del_unless_tombstoned(&mut redis, &address_cache_key).await;
+	let _ = cache::del_unless_tombstoned(&mut redis, &username_cache_key).await;
+	let _ = cache::del_unless_tombstoned(&mut redis, &avatar_original_cache_key).await;
+	let _ = cache::del_unless_tombstoned(&mut redis, &avatar_minimized_cache_key).await;
 
 	info!(
 		address = %address,
