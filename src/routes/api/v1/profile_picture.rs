@@ -8,13 +8,14 @@ use image::{
 	imageops::FilterType,
 	GenericImageView, ImageFormat, ImageReader,
 };
-use redis::{aio::ConnectionManager, AsyncCommands};
+use redis::aio::ConnectionManager;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, io::Cursor, sync::Arc};
 use tracing::{info, info_span, warn, Instrument};
 
 use crate::{
+	cache,
 	config::{Config, ConfigExt, Db},
 	types::{
 		ErrorResponse, ProfilePictureUploadResponse, VerificationLevel as WrappedVerificationLevel,
@@ -335,30 +336,24 @@ impl ProfilePictureUploadHandler {
 	}
 
 	async fn invalidate_cache(&mut self, username: &str) -> Result<(), ErrorResponse> {
+		// Cache keys are canonical: lowercased username, checksummed address.
+		let username = username.to_lowercase();
 		let address_cache_key =
 			format!("query_single:{}", validate_address(self.payload.address()));
 		let username_cache_key = format!("query_single:{username}");
 		let avatar_original_cache_key = format!("avatar:{username}:original");
 		let avatar_minimized_cache_key = format!("avatar:{username}:minimized");
 
-		let _: Result<(), redis::RedisError> = self
-			.redis
-			.del(&address_cache_key)
+		let _ = cache::del_unless_tombstoned(&mut self.redis, &address_cache_key)
 			.instrument(info_span!("redis.delete_query_single_address"))
 			.await;
-		let _: Result<(), redis::RedisError> = self
-			.redis
-			.del(&username_cache_key)
+		let _ = cache::del_unless_tombstoned(&mut self.redis, &username_cache_key)
 			.instrument(info_span!("redis.delete_query_single_username"))
 			.await;
-		let _: Result<(), redis::RedisError> = self
-			.redis
-			.del(&avatar_original_cache_key)
+		let _ = cache::del_unless_tombstoned(&mut self.redis, &avatar_original_cache_key)
 			.instrument(info_span!("redis.delete_avatar_original"))
 			.await;
-		let _: Result<(), redis::RedisError> = self
-			.redis
-			.del(&avatar_minimized_cache_key)
+		let _ = cache::del_unless_tombstoned(&mut self.redis, &avatar_minimized_cache_key)
 			.instrument(info_span!("redis.delete_avatar_minimized"))
 			.await;
 

@@ -7,10 +7,11 @@ use axum::{
 	Extension,
 };
 use axum_jsonschema::Json;
-use redis::{aio::ConnectionManager, AsyncCommands};
+use redis::aio::ConnectionManager;
 use tracing::{info_span, Instrument};
 
 use crate::{
+	cache,
 	config::Db,
 	types::{ErrorResponse, MovedRecord, Name, UsernameRecord},
 	utils::ONE_MINUTE_IN_SECONDS,
@@ -24,13 +25,30 @@ pub async fn query_single(
 ) -> Result<Response, ErrorResponse> {
 	let validated_input = validate_address(&name_or_address);
 
-	let cache_key = format!("query_single:{validated_input}");
+	let cache_key = format!(
+		"query_single:{}",
+		cache::canonical_cache_input(&name_or_address)
+	);
 
-	if let Ok(cached_data) = redis.get::<_, String>(&cache_key).await {
-		if let Ok(record) = serde_json::from_str::<UsernameRecord>(&cached_data) {
-			return Ok(Json(record).into_response());
-		}
+	let mut deletion_tombstoned = false;
+	match cache::lookup(&mut redis, &cache_key).await {
+		cache::Lookup::Hit(cached_data) => {
+			if let Ok(record) = serde_json::from_str::<UsernameRecord>(&cached_data) {
+				return Ok(Json(record).into_response());
+			}
+		},
+		cache::Lookup::Tombstoned => deletion_tombstoned = true,
+		cache::Lookup::Miss => {},
 	}
+
+	// A tombstoned key means the record was just deleted: a read replica may
+	// still return the deleted row, so verify against the primary instead.
+	// (A row found there is a legitimate re-registration of the freed name.)
+	let db_pool = if deletion_tombstoned {
+		&db.read_write
+	} else {
+		&db.read_only
+	};
 
 	if let Some(name) = sqlx::query_as!(
 		Name,
@@ -61,16 +79,20 @@ pub async fn query_single(
         "#,
 		validated_input
 	)
-	.fetch_optional(&db.read_only)
+	.fetch_optional(db_pool)
 	.instrument(info_span!("query_single_db_query", input = validated_input))
 	.await?
 	{
 		let record = UsernameRecord::from(name);
 		// long cache because we can effectively invalidate
 		if let Ok(json_data) = serde_json::to_string(&record) {
-			let _: Result<(), redis::RedisError> = redis
-				.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 60 * 24)
-				.await;
+			let _ = cache::set_ex_unless_tombstoned(
+				&mut redis,
+				&cache_key,
+				&json_data,
+				ONE_MINUTE_IN_SECONDS * 60 * 24,
+			)
+			.await;
 		}
 		return Ok(Json(record).into_response());
 	}
@@ -80,7 +102,7 @@ pub async fn query_single(
 		"SELECT * FROM old_names WHERE old_username = $1",
 		name_or_address
 	)
-	.fetch_optional(&db.read_only)
+	.fetch_optional(db_pool)
 	.instrument(info_span!(
 		"query_single_moved_db_query",
 		username = name_or_address

@@ -171,11 +171,15 @@ impl DeletionRequestQueueImpl {
 #[async_trait]
 impl DeletionRequestQueue for DeletionRequestQueueImpl {
 	async fn poll_messages(&self) -> Result<Vec<QueueMessage>, QueueError> {
+		// An issued receive is only abandoned as a last resort (see the
+		// shutdown-grace handling in `worker.rs`), so the long-poll wait
+		// bounds how long an idle worker takes to notice shutdown. 10s keeps
+		// that comfortably inside the ECS stop grace period (default 30s).
 		let receive_msg_output = self
 			.sqs_client
 			.receive_message()
 			.queue_url(&self.queue_url)
-			.wait_time_seconds(20)
+			.wait_time_seconds(10)
 			.max_number_of_messages(self.max_messages)
 			.send()
 			.await

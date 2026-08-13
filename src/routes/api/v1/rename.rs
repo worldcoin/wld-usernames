@@ -6,11 +6,12 @@ use tracing::{info_span, Instrument};
 
 use crate::{
 	blocklist::BlocklistExt,
+	cache,
 	config::{ConfigExt, Db, DEVICE_USERNAME_REGEX, USERNAME_REGEX},
 	types::{ErrorResponse, MovedAddress, Name, RenamePayload},
 	verify,
 };
-use redis::{aio::ConnectionManager, AsyncCommands};
+use redis::aio::ConnectionManager;
 
 #[tracing::instrument(skip_all)]
 #[allow(clippy::too_many_lines)] // TODO: refactor
@@ -166,15 +167,13 @@ pub async fn rename(
 
 	tx.commit().await?;
 
-	let query_single_username_cache_key = format!("query_single:{}", payload.old_username);
+	// Cache keys are canonical: lowercased username, checksummed address.
+	let query_single_username_cache_key =
+		format!("query_single:{}", payload.old_username.to_lowercase());
 	let query_single_address_cache_key = format!("query_single:{}", moved_address.address);
 
-	redis
-		.del::<_, String>(&query_single_username_cache_key)
-		.await?;
-	redis
-		.del::<_, String>(&query_single_address_cache_key)
-		.await?;
+	cache::del_unless_tombstoned(&mut redis, &query_single_username_cache_key).await?;
+	cache::del_unless_tombstoned(&mut redis, &query_single_address_cache_key).await?;
 
 	Ok(StatusCode::OK)
 }

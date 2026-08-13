@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM old_names WHERE new_username IN (SELECT username FROM names WHERE address = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "77d80b13d06006d8680d8805d20a270d882dad4bb4f4a04fb387dde9a7d1f25a"
+}

@@ -3,6 +3,7 @@ use std::time::Duration;
 use anyhow::Context;
 
 use crate::{
+	cache,
 	config::{get_or_init_opensearch_client, ConfigExt, USERNAME_SEARCH_REGEX},
 	types::{ErrorResponse, UsernameRecord},
 	utils::ONE_MINUTE_IN_SECONDS,
@@ -13,7 +14,7 @@ use axum::{
 	Extension,
 };
 use axum_jsonschema::Json;
-use redis::{aio::ConnectionManager, AsyncCommands};
+use redis::aio::ConnectionManager;
 use tokio::time::timeout;
 use tracing::{info_span, Instrument};
 
@@ -30,8 +31,10 @@ pub async fn search(
 
 	let cache_key = format!("search:{lowercase_username}");
 
-	// try to get results from cache first
-	if let Ok(cached_data) = redis.get::<_, String>(&cache_key).await {
+	// Try to get results from cache first. A deletion tombstone counts as a
+	// miss: search is backed by OpenSearch, whose freshness is already
+	// bounded by DMS replication rather than this cache.
+	if let cache::Lookup::Hit(cached_data) = cache::lookup(&mut redis, &cache_key).await {
 		if let Ok(records) = serde_json::from_str::<Vec<UsernameRecord>>(&cached_data) {
 			return Ok(Json(records).into_response());
 		}
@@ -81,9 +84,13 @@ pub async fn search(
 
 	// cache the results
 	if let Ok(json_data) = serde_json::to_string(&records) {
-		let _: Result<(), redis::RedisError> = redis
-			.set_ex(&cache_key, json_data, ONE_MINUTE_IN_SECONDS * 5)
-			.await;
+		let _ = cache::set_ex_unless_tombstoned(
+			&mut redis,
+			&cache_key,
+			&json_data,
+			ONE_MINUTE_IN_SECONDS * 5,
+		)
+		.await;
 	}
 
 	Ok(Json(records).into_response())
