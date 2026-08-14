@@ -2,6 +2,8 @@
 
 This is our open source implementation of ENS compatible Usernames
 
+> Note: Profile pictures are currently an internal preview feature, are not generally available, and should not be considered part of the supported public product surface.
+
 ## Prerequisite
 
 In order to use `sqlx` commands, you need to install `sqlx-cli`
