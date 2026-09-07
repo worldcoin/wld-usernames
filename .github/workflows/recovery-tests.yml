@@ -1,0 +1,40 @@
+name: Username recovery tests
+on:
+  pull_request:
+    paths: ["src/**", "migrations/**", "Cargo.*", ".github/workflows/recovery-tests.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on:
+      group: arc-large-amd64-runner
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: usernames_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      SQLX_OFFLINE: "true"
+      DATABASE_URL: postgres://postgres:test@localhost:5432/usernames_test
+      TEST_REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.86.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo +1.86.0 test --locked
+      - run: cargo +1.86.0 test --locked routes::api::v2 -- --ignored
+      - run: cargo +1.86.0 clippy --locked --all-targets
