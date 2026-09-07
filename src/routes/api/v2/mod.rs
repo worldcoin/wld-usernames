@@ -286,8 +286,8 @@ async fn complete(
 
 fn ensure_live(challenge: &Challenge, now: i64) -> Result<(), ErrorResponse> {
 	if now >= challenge.expires_at || now < challenge.created_at {
-		return Err(ErrorResponse::bad_request(
-			"Challenge expired; request a new one",
+		return Err(ErrorResponse::gone(
+			"Challenge expired; request a new one".into(),
 		));
 	}
 	Ok(())

@@ -115,9 +115,16 @@ async fn submit(
 
 #[test]
 fn expiry_and_wire_request_bindings() {
+	use axum::response::IntoResponse;
 	let c = pending("register", "alice", None);
 	assert!(ensure_live(&c, c.expires_at - 1).is_ok());
-	assert!(ensure_live(&c, c.expires_at).is_err());
+	assert_eq!(
+		ensure_live(&c, c.expires_at)
+			.unwrap_err()
+			.into_response()
+			.status(),
+		StatusCode::GONE
+	);
 	assert!(ensure_live(&c, c.created_at - 1).is_err());
 	let settings = proof::Settings {
 		rp_id: "rp_0000000000000001".into(),
