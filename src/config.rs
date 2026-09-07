@@ -77,6 +77,7 @@ impl FromStr for Environment {
 
 #[derive(Debug)]
 pub struct Config {
+	pub world_id_v4: Option<crate::routes::api::v2::proof::Settings>,
 	pub wld_app_id: AppId,
 	pub ens_domain: String,
 	pub private_key: String,
@@ -216,6 +217,7 @@ impl Config {
 				.context("ENS_DOMAIN environment variable not set")?,
 			private_key: env::var("PRIVATE_KEY")
 				.context("PRIVATE_KEY environment variable not set")?,
+			world_id_v4: crate::routes::api::v2::proof::Settings::from_env()?,
 			wld_app_id: unsafe {
 				AppId::new_unchecked(
 					env::var("WLD_APP_ID").context("WLD_APP_ID environment variable not set")?,
@@ -301,6 +303,7 @@ impl Config {
 		Self {
 			environment: env,
 			search_opensearch_timeout: Duration::from_millis(2000),
+			world_id_v4: None,
 			wld_app_id: unsafe { AppId::new_unchecked("app_test_app_id".to_string()) },
 			ens_domain: "test.eth".to_string(),
 			private_key: "test_private_key".to_string(),
