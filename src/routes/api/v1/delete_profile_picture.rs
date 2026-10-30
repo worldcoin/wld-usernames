@@ -4,10 +4,10 @@ use redis::aio::ConnectionManager;
 use tracing::{info, info_span, warn, Instrument};
 
 use crate::{
-	nullifier::canonical_nullifier,
 	cache,
 	config::{ConfigExt, Db},
 	deletion,
+	nullifier::canonical_nullifier,
 	routes::api::v1::query_single::validate_address,
 	types::{DeleteProfilePicturePayload, ErrorResponse, Name},
 	verify,

@@ -5,9 +5,9 @@ use idkit::session::VerificationLevel;
 use tracing::{info_span, Instrument};
 
 use crate::{
-	nullifier::canonical_nullifier,
 	blocklist::BlocklistExt,
 	config::{ConfigExt, Db, DEVICE_USERNAME_REGEX, USERNAME_REGEX},
+	nullifier::canonical_nullifier,
 	types::{ErrorResponse, Name, RegisterUsernamePayload},
 	verify,
 };

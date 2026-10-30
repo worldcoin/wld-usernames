@@ -4,8 +4,8 @@ use http::StatusCode;
 use tracing::{info_span, Instrument};
 
 use crate::{
-	nullifier::canonical_nullifier,
 	config::{ConfigExt, Db},
+	nullifier::canonical_nullifier,
 	types::{ErrorResponse, Name, UpdateUsernamePayload},
 	verify,
 };
