@@ -6,6 +6,7 @@ mod cache;
 mod config;
 mod data_deletion_worker;
 mod deletion;
+mod nullifier;
 mod routes;
 mod search;
 mod server;

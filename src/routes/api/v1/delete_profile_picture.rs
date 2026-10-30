@@ -4,6 +4,7 @@ use redis::aio::ConnectionManager;
 use tracing::{info, info_span, warn, Instrument};
 
 use crate::{
+	nullifier::canonical_nullifier,
 	cache,
 	config::{ConfigExt, Db},
 	deletion,
@@ -25,8 +26,11 @@ pub async fn delete_profile_picture(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<Db>,
 	Extension(mut redis): Extension<ConnectionManager>,
-	Query(payload): Query<DeleteProfilePicturePayload>,
+	Query(mut payload): Query<DeleteProfilePicturePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
+	payload.nullifier_hash = canonical_nullifier(&payload.nullifier_hash)
+		.map_err(|error| ErrorResponse::validation_error(error.to_string()))?;
+
 	match verify::dev_portal_verify_proof(
 		payload.into_proof(),
 		config.wld_app_id.to_string(),
@@ -73,7 +77,7 @@ pub async fn delete_profile_picture(
 		));
 	};
 
-	if record.nullifier_hash != payload.nullifier_hash {
+	if canonical_nullifier(&record.nullifier_hash)? != payload.nullifier_hash {
 		return Err(ErrorResponse::unauthorized(
 			"You can't update this profile picture".to_string(),
 		));

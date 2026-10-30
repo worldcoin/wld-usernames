@@ -5,6 +5,7 @@ use idkit::session::VerificationLevel;
 use tracing::{info_span, Instrument};
 
 use crate::{
+	nullifier::canonical_nullifier,
 	blocklist::BlocklistExt,
 	config::{ConfigExt, Db, DEVICE_USERNAME_REGEX, USERNAME_REGEX},
 	types::{ErrorResponse, Name, RegisterUsernamePayload},
@@ -17,8 +18,11 @@ pub async fn register_username(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<Db>,
 	Extension(blocklist): BlocklistExt,
-	Json(payload): Json<RegisterUsernamePayload>,
+	Json(mut payload): Json<RegisterUsernamePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
+	payload.nullifier_hash = canonical_nullifier(&payload.nullifier_hash)
+		.map_err(|error| ErrorResponse::validation_error(error.to_string()))?;
+
 	match verify::dev_portal_verify_proof(
 		payload.into_proof(),
 		config.wld_app_id.to_string(),
@@ -71,7 +75,7 @@ pub async fn register_username(
 
 	let uniqueness_check = sqlx::query!(
 		"SELECT
-			EXISTS(SELECT 1 FROM names WHERE nullifier_hash = $2) AS world_id,
+			EXISTS(SELECT 1 FROM names WHERE canonical_world_id_nullifier(nullifier_hash) = $2) AS world_id,
 			EXISTS(SELECT 1 FROM names WHERE LOWER(username) = LOWER($1) UNION SELECT 1 FROM old_names where LOWER(old_username) = LOWER($1)) AS username",
 			&payload.username,
 			&payload.nullifier_hash
@@ -108,16 +112,31 @@ pub async fn register_username(
 		payload.nullifier_hash,
 		&payload.verification_level,
 	)
-	.insert(&db.read_write, "names")
+	.insert::<()>(&db.read_write, "names")
 	.instrument(info_span!(
 		"register_username_insert",
 		username = payload.username,
 	))
-	.await?;
+	.await
+	.map_err(registration_insert_error)?;
 
 	Ok(StatusCode::CREATED)
 }
 
 pub fn docs(op: aide::transform::TransformOperation) -> aide::transform::TransformOperation {
 	op.description("Register a World App username with World ID.")
+}
+
+// The precheck is only an early error. The unique index is authoritative when
+// two verified registrations race or an older application writes another encoding.
+fn registration_insert_error(error: sqlx::Error) -> ErrorResponse {
+	if error.as_database_error().is_some_and(|error| {
+		error.is_unique_violation()
+			&& error.constraint() == Some("names_nullifier_canonical_unique")
+	}) {
+		return ErrorResponse::validation_error(
+			"This World ID has already registered a username.".to_string(),
+		);
+	}
+	error.into()
 }
