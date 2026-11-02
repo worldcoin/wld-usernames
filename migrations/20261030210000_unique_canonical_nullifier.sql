@@ -44,7 +44,7 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'Multiple usernames share a canonical World ID nullifier'
             USING ERRCODE = '23505',
-                  HINT = 'Review ownership collisions before retrying; see docs/nullifier-uniqueness-rollout.md. No records were changed.';
+                  HINT = 'Review ownership collisions before retrying. No records were changed.';
     END IF;
 END;
 $$;
