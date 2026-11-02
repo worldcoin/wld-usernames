@@ -14,8 +14,8 @@ use axum::{
 	routing::{delete, post},
 	Extension, Router,
 };
-use serde_json::{json, Value};
 use futures::FutureExt;
+use serde_json::{json, Value};
 use sqlx::PgPool;
 use std::{future::Future, panic::AssertUnwindSafe, sync::Arc};
 use tokio::sync::OnceCell;
@@ -185,7 +185,12 @@ async fn equivalent_nullifiers_cannot_register_twice() {
 			canonical_nullifier(&nullifier).unwrap().to_string()
 		);
 		assert_eq!(
-			send(app, "/register", test.registration("c", &test.nullifier("b"))).await,
+			send(
+				app,
+				"/register",
+				test.registration("c", &test.nullifier("b"))
+			)
+			.await,
 			StatusCode::CREATED
 		);
 		for request in verifier.received_requests().await.unwrap() {
@@ -207,7 +212,12 @@ async fn invalid_nullifier_or_proof_never_writes() {
 		);
 		assert!(verifier.received_requests().await.unwrap().is_empty());
 		assert_eq!(
-			send(app, "/register", test.registration("a", &test.nullifier("a"))).await,
+			send(
+				app,
+				"/register",
+				test.registration("a", &test.nullifier("a"))
+			)
+			.await,
 			StatusCode::UNPROCESSABLE_ENTITY
 		);
 		assert_eq!(test.count().await, 0);
@@ -221,7 +231,11 @@ async fn concurrent_registrations_return_one_conflict() {
 		let (app, _verifier) = fixture(&test.pool, 200).await;
 		let nullifier = test.nullifier("a");
 		let (first, second) = tokio::join!(
-			send(app.clone(), "/register", test.registration("a", &format!("0X0{}", nullifier.to_uppercase()))),
+			send(
+				app.clone(),
+				"/register",
+				test.registration("a", &format!("0X0{}", nullifier.to_uppercase()))
+			),
 			send(app, "/register", test.registration("b", &nullifier)),
 		);
 		assert!(matches!(
@@ -247,7 +261,10 @@ async fn legacy_encoding_stays_owned_and_reserved() {
 		let mut update = test.registration("a", &nullifier);
 		update.as_object_mut().unwrap().remove("username");
 		let path = format!("/{}", test.name("a"));
-		assert_eq!(send(app.clone(), &path, update.clone()).await, StatusCode::OK);
+		assert_eq!(
+			send(app.clone(), &path, update.clone()).await,
+			StatusCode::OK
+		);
 		update["nullifier_hash"] = json!(test.nullifier("b"));
 		assert_eq!(send(app, &path, update).await, StatusCode::UNAUTHORIZED);
 		assert_eq!(test.stored().await, raw);
