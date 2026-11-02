@@ -100,7 +100,9 @@ mod tests {
 			format!("0x{largest}")
 		);
 		assert_eq!(
-			canonical_nullifier(&largest.to_uppercase()).unwrap().to_string(),
+			canonical_nullifier(&largest.to_uppercase())
+				.unwrap()
+				.to_string(),
 			format!("0x{largest}")
 		);
 		assert_ne!(
