@@ -1,13 +1,13 @@
 -- SQLx runs this migration in one transaction. Preserve the original wire value
 -- for existing clients, but enforce ownership using the verified numeric value.
 -- Keep this function immutable: changing it requires rebuilding its index.
-CREATE FUNCTION canonical_world_id_nullifier(value TEXT) RETURNS TEXT
+CREATE FUNCTION canonical_world_id_nullifier(value TEXT) RETURNS BYTEA
 LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL SAFE
 SET search_path = pg_catalog
 AS $$
 DECLARE
     digits TEXT := value;
-    canonical_digits TEXT;
+    canonical_bytes BYTEA;
 BEGIN
     IF left(digits, 2) IN ('0x', '0X') THEN
         digits := substr(digits, 3);
@@ -18,15 +18,15 @@ BEGIN
             USING ERRCODE = '22023',
                   HINT = 'Expected 1-64 ASCII hex digits with an optional 0x prefix.';
     END IF;
-    canonical_digits := lpad(lower(digits), 64, '0');
-    -- BN254 scalar field modulus. Compare equal-width ASCII strings, not floats
-    -- or a reduction modulo the field (which would alias invalid inputs).
-    IF canonical_digits COLLATE "C" >=
-       '30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001' COLLATE "C" THEN
+    canonical_bytes := decode(lpad(digits, 64, '0'), 'hex');
+    -- Compare exactly 32 big-endian bytes, without collation, floating-point
+    -- conversion or modular reduction (which would alias invalid inputs).
+    IF canonical_bytes >= decode(
+       '30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001', 'hex') THEN
         RAISE EXCEPTION 'World ID nullifier is outside the scalar field'
             USING ERRCODE = '22023';
     END IF;
-    RETURN '0x' || canonical_digits;
+    RETURN canonical_bytes;
 END;
 $$;
 

@@ -93,7 +93,7 @@ async fn equivalent_nullifiers_cannot_register_twice(pool: PgPool) {
 			.fetch_one(&pool)
 			.await
 			.unwrap();
-	assert_eq!(stored, canonical_nullifier("a").unwrap());
+	assert_eq!(stored, canonical_nullifier("a").unwrap().to_string());
 	assert_eq!(
 		send(app, "/register", registration("carol", "b")).await,
 		StatusCode::CREATED
@@ -102,7 +102,7 @@ async fn equivalent_nullifiers_cannot_register_twice(pool: PgPool) {
 	for request in requests {
 		let body: Value = request.body_json().unwrap();
 		let value = body["nullifier_hash"].as_str().unwrap();
-		assert_eq!(canonical_nullifier(value).unwrap(), value);
+		assert_eq!(canonical_nullifier(value).unwrap().to_string(), value);
 	}
 }
 

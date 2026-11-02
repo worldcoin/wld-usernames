@@ -1,9 +1,18 @@
 # Canonical username ownership rollout
 
 Username ownership is keyed by a numeric World ID nullifier, not its input text.
-The migration installs an immutable parser and a unique expression index. It does
+Rust keeps the checked identity as `[u8; 32]`. The migration installs an immutable
+parser returning exactly 32 big-endian bytes (`bytea`) and a unique expression index.
+Lookup binds bytes directly; equality and uniqueness do not depend on text collation.
+The wire API and newly stored strings remain lowercase, zero-padded `0x` hex. It does
 not change stored nullifier strings, add columns, delete names or choose a winner
 among duplicates. Existing `SELECT *` consumers remain compatible.
+
+This revision edits the unmerged migration in PR #161. If an earlier draft of that
+migration has already been applied to a persistent environment, stop: it requires a
+separately reviewed follow-up migration to replace the function and rebuild the
+index atomically. Do not bypass SQLx checksums or replace an indexed immutable
+function in place. Disposable test databases can be recreated.
 
 ## Before deployment
 

@@ -66,8 +66,16 @@ BEGIN
     IF (SELECT nullifier_hash FROM names WHERE username='legacy') <> '0X000A' THEN
         RAISE EXCEPTION 'Migration rewrote legacy owner';
     END IF;
+    IF pg_typeof(canonical_world_id_nullifier('0')) <> 'bytea'::regtype
+       OR octet_length(canonical_world_id_nullifier('0')) <> 32
+       OR octet_length(canonical_world_id_nullifier('a')) <> 32 THEN
+        RAISE EXCEPTION 'Identity is not a fixed 32-byte blob';
+    END IF;
+    IF canonical_world_id_nullifier('100') <> decode(repeat('0', 60) || '0100', 'hex') THEN
+        RAISE EXCEPTION 'Identity is not big endian';
+    END IF;
     FOREACH encoding IN ARRAY ARRAY['0xa','0x0a','0x0A','A','0X000A', '000000000000000a'] LOOP
-        IF canonical_world_id_nullifier(encoding) <> '0x' || repeat('0', 63) || 'a' THEN
+        IF canonical_world_id_nullifier(encoding) <> decode(repeat('0', 63) || 'a', 'hex') THEN
             RAISE EXCEPTION 'Canonical mismatch';
         END IF;
         BEGIN
@@ -90,9 +98,9 @@ BEGIN
         EXCEPTION WHEN invalid_parameter_value THEN NULL;
         END;
     END LOOP;
-    IF canonical_world_id_nullifier('0') <> '0x' || repeat('0',64) THEN RAISE EXCEPTION 'Zero mismatch'; END IF;
+    IF canonical_world_id_nullifier('0') <> decode(repeat('0',64), 'hex') THEN RAISE EXCEPTION 'Zero mismatch'; END IF;
     IF canonical_world_id_nullifier('30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000') <>
-       '0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000' THEN
+       decode('30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000', 'hex') THEN
         RAISE EXCEPTION 'Field maximum rejected';
     END IF;
 END $$;

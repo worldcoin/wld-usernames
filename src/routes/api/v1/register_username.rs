@@ -20,8 +20,9 @@ pub async fn register_username(
 	Extension(blocklist): BlocklistExt,
 	Json(mut payload): Json<RegisterUsernamePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
-	payload.nullifier_hash = canonical_nullifier(&payload.nullifier_hash)
+	let nullifier = canonical_nullifier(&payload.nullifier_hash)
 		.map_err(|error| ErrorResponse::validation_error(error.to_string()))?;
+	payload.nullifier_hash = nullifier.to_string();
 
 	match verify::dev_portal_verify_proof(
 		payload.into_proof(),
@@ -78,7 +79,7 @@ pub async fn register_username(
 			EXISTS(SELECT 1 FROM names WHERE canonical_world_id_nullifier(nullifier_hash) = $2) AS world_id,
 			EXISTS(SELECT 1 FROM names WHERE LOWER(username) = LOWER($1) UNION SELECT 1 FROM old_names where LOWER(old_username) = LOWER($1)) AS username",
 			&payload.username,
-			&payload.nullifier_hash
+			nullifier.as_bytes()
 		)
 		.fetch_one(&db.read_write)
 		.instrument(info_span!(

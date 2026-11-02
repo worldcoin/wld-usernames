@@ -17,8 +17,9 @@ pub async fn update_record(
 	Extension(db): Extension<Db>,
 	Json(mut payload): Json<UpdateUsernamePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
-	payload.nullifier_hash = canonical_nullifier(&payload.nullifier_hash)
+	let nullifier = canonical_nullifier(&payload.nullifier_hash)
 		.map_err(|error| ErrorResponse::validation_error(error.to_string()))?;
+	payload.nullifier_hash = nullifier.to_string();
 
 	let Some(record) = sqlx::query_as!(Name, "SELECT * FROM names WHERE username = $1", username)
 		.fetch_optional(&db.read_write)
@@ -31,7 +32,7 @@ pub async fn update_record(
 		return Err(ErrorResponse::not_found("Username not found".to_string()));
 	};
 
-	if canonical_nullifier(&record.nullifier_hash)? != payload.nullifier_hash {
+	if canonical_nullifier(&record.nullifier_hash)? != nullifier {
 		return Err(ErrorResponse::unauthorized(
 			"You can't update this name".to_string(),
 		));
