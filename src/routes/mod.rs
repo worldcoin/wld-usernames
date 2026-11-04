@@ -1,6 +1,6 @@
 use aide::axum::{routing::get_with, ApiRouter};
 
-mod api;
+pub mod api;
 mod docs;
 mod health;
 mod system;

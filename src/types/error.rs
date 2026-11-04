@@ -19,6 +19,13 @@ struct ErrorResponseSchema {
 }
 
 impl ErrorResponse {
+	pub const fn gone(error: String) -> Self {
+		Self {
+			error,
+			status: StatusCode::GONE,
+		}
+	}
+
 	pub const fn not_found(error: String) -> Self {
 		Self {
 			error,
