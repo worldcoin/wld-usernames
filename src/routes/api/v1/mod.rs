@@ -88,3 +88,6 @@ pub fn handler() -> ApiRouter {
 		)
 		.nest("/internal", internal::handler())
 }
+
+#[cfg(test)]
+mod nullifier_tests;

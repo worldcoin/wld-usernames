@@ -7,6 +7,7 @@ use crate::{
 	cache,
 	config::{ConfigExt, Db},
 	deletion,
+	nullifier::canonical_nullifier,
 	routes::api::v1::query_single::validate_address,
 	types::{DeleteProfilePicturePayload, ErrorResponse, Name},
 	verify,
@@ -25,8 +26,12 @@ pub async fn delete_profile_picture(
 	Extension(config): ConfigExt,
 	Extension(db): Extension<Db>,
 	Extension(mut redis): Extension<ConnectionManager>,
-	Query(payload): Query<DeleteProfilePicturePayload>,
+	Query(mut payload): Query<DeleteProfilePicturePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
+	let nullifier = canonical_nullifier(&payload.nullifier_hash)
+		.map_err(|error| ErrorResponse::validation_error(error.to_string()))?;
+	payload.nullifier_hash = nullifier.to_string();
+
 	match verify::dev_portal_verify_proof(
 		payload.into_proof(),
 		config.wld_app_id.to_string(),
@@ -73,7 +78,7 @@ pub async fn delete_profile_picture(
 		));
 	};
 
-	if record.nullifier_hash != payload.nullifier_hash {
+	if canonical_nullifier(&record.nullifier_hash)? != nullifier {
 		return Err(ErrorResponse::unauthorized(
 			"You can't update this profile picture".to_string(),
 		));

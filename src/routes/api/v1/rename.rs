@@ -8,6 +8,7 @@ use crate::{
 	blocklist::BlocklistExt,
 	cache,
 	config::{ConfigExt, Db, DEVICE_USERNAME_REGEX, USERNAME_REGEX},
+	nullifier::canonical_nullifier,
 	types::{ErrorResponse, MovedAddress, Name, RenamePayload},
 	verify,
 };
@@ -21,8 +22,12 @@ pub async fn rename(
 	Extension(db): Extension<Db>,
 	Extension(mut redis): Extension<ConnectionManager>,
 	Extension(blocklist): BlocklistExt,
-	Json(payload): Json<RenamePayload>,
+	Json(mut payload): Json<RenamePayload>,
 ) -> Result<StatusCode, ErrorResponse> {
+	let nullifier = canonical_nullifier(&payload.nullifier_hash)
+		.map_err(|error| ErrorResponse::validation_error(error.to_string()))?;
+	payload.nullifier_hash = nullifier.to_string();
+
 	let Some(record) = sqlx::query_as!(
 		Name,
 		"SELECT * FROM names WHERE username = $1",
@@ -38,7 +43,7 @@ pub async fn rename(
 		return Err(ErrorResponse::not_found("Username not found".to_string()));
 	};
 
-	if record.nullifier_hash != payload.nullifier_hash {
+	if canonical_nullifier(&record.nullifier_hash)? != nullifier {
 		return Err(ErrorResponse::unauthorized(
 			"You can't update this name".to_string(),
 		));
